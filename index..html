@@ -1,0 +1,935 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Somnia Christmas Quest - Sinterklas vs Grinch</title>
+    <!-- Memuat Tailwind CSS untuk styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Memuat Ethers.js untuk interaksi Web3. -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0A3622; /* Hijau Natal Gelap */
+            background-image: radial-gradient(circle at center, #0B4E2B 0%, #0A3622 100%);
+            color: #E0F2F1;
+            min-height: 100vh;
+        }
+        .container-main {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .game-grid {
+            border: 8px solid #EF4444; /* Merah Natal */
+            box-shadow: 0 0 50px rgba(255, 200, 0, 0.7);
+            background-color: #0F172A;
+            /* Pastikan grid mengambil lebar penuh kontainer */
+            width: 100%; 
+            aspect-ratio: 21 / 13; /* Menjaga rasio peta */
+        }
+        .wall {
+            background-image: repeating-linear-gradient(45deg, #EF4444, #EF4444 10px, #FFFFFF 10px, #FFFFFF 20px);
+            background-size: 20px 20px;
+            border: 1px solid #C40000;
+        }
+        .dot {
+            background-color: #0B4E2B;
+            position: relative;
+        }
+        .dot::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 8px;
+            height: 8px;
+            background-color: #FBBF24; /* Kuning Emas */
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 0 5px #FBBF24;
+            animation: pulse 1s infinite alternate;
+        }
+        .power-pellet::after {
+            content: '⭐';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            font-size: 20px;
+            line-height: 1;
+            transform: translate(-50%, -50%);
+            animation: spin 2s linear infinite;
+        }
+        .empty-space {
+            background-color: #0B4E2B;
+        }
+        .pacman {
+            font-size: 24px;
+            line-height: 1;
+            animation: blink 0.5s infinite alternate;
+        }
+        .ghost {
+            font-size: 24px;
+            line-height: 1;
+            animation: float 1.5s infinite alternate;
+        }
+        @keyframes pulse {
+            from { transform: translate(-50%, -50%) scale(0.8); opacity: 0.8; }
+            to { transform: translate(-50%, -50%) scale(1.1); opacity: 1; }
+        }
+        @keyframes spin {
+            from { transform: translate(-50%, -50%) rotate(0deg); }
+            to { transform: translate(-50%, -50%) rotate(360deg); }
+        }
+        @keyframes float {
+            from { transform: translateY(-2px); }
+            to { transform: translateY(2px); }
+        }
+        @keyframes blink {
+            from { opacity: 1; }
+            to { opacity: 0.8; }
+        }
+        .leaderboard-item {
+             backdrop-filter: blur(5px);
+             background-color: rgba(255, 255, 255, 0.05);
+        }
+    </style>
+</head>
+<body class="p-4 sm:p-8">
+
+    <div class="container-main flex flex-col lg:flex-row gap-8">
+        
+        <!-- KOLOM KIRI: GAME AREA DAN KONTROL -->
+        <div class="w-full lg:w-2/3 flex flex-col items-center">
+            
+            <h1 class="text-4xl sm:text-5xl font-black text-red-500 mb-8 p-3 rounded-xl bg-gray-900/70 border-b-4 border-yellow-400 shadow-xl text-center">
+                SOMNIA CHRISTMAS QUEST 🎅🎄
+            </h1>
+
+            <div id="game-container" class="w-full max-w-xl flex flex-col items-center relative">
+                <!-- Status Bar -->
+                <div id="status-bar" class="w-full bg-red-800 p-3 rounded-t-xl shadow-lg flex justify-between items-center border-b-4 border-yellow-400 z-10">
+                    <h2 class="text-2xl font-extrabold text-white flex items-center">
+                        <span class="mr-1">⚡</span> SKOR: <span id="score-display">0</span>
+                    </h2>
+                    <div id="power-status" class="text-sm font-bold text-white/50 flex items-center">
+                        MODE NORMAL
+                    </div>
+                </div>
+
+                <!-- Game Grid Akan Dirender di sini -->
+                <div id="game-grid" class="game-grid grid">
+                    <!-- Tile akan diisi oleh JavaScript -->
+                </div>
+                
+                <!-- Overlay Game Over/Win -->
+                <div id="game-overlay" class="hidden absolute top-0 left-0 w-full h-full bg-gray-900/95 flex flex-col items-center justify-center z-20 rounded-b-xl p-8">
+                    <h1 id="overlay-title" class="text-5xl font-extrabold mb-4 animate-bounce text-red-500">GAME OVER</h1>
+                    <p class="text-3xl text-yellow-400 mb-6 font-bold">Skor Akhir: <span id="final-score">0</span></p>
+                    <p id="web3-message" class="text-lg text-gray-300 mb-8 text-center">Status Web3...</p>
+                    <button onclick="window.location.reload()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-8 rounded-xl shadow-lg transition duration-300 transform hover:scale-105">
+                        Main Lagi (Reload)
+                    </button>
+                </div>
+
+                <!-- Kontrol Mobile -->
+                <div class="mt-8 p-4 bg-gray-900/50 rounded-xl w-full max-w-sm">
+                    <h3 class="text-sm text-center text-gray-400 mb-4">Kontrol Arah (WASD/Panah di keyboard)</h3>
+                    <div class="grid grid-cols-3 gap-2 w-48 mx-auto">
+                        <div class="col-span-1"></div>
+                        <button onmousedown="setDirection('UP')" ontouchstart="setDirection('UP')" class="p-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-md transition transform hover:scale-105 active:scale-95"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg></button>
+                        <div class="col-span-1"></div>
+                        <button onmousedown="setDirection('LEFT')" ontouchstart="setDirection('LEFT')" class="p-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-md transition transform hover:scale-105 active:scale-95"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></button>
+                        <button onmousedown="setDirection('DOWN')" ontouchstart="setDirection('DOWN')" class="p-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-md transition transform hover:scale-105 active:scale-95"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>
+                        <button onmousedown="setDirection('RIGHT')" ontouchstart="setDirection('RIGHT')" class="p-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-md transition transform hover:scale-105 active:scale-95"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- KOLOM KANAN: STATUS WEB3 & LEADERBOARD -->
+        <div class="w-full lg:w-1/3 flex flex-col gap-6 p-4 lg:p-0">
+            
+            <!-- Status Web3 -->
+            <div id="web3-card" class="bg-gray-800 p-4 rounded-xl shadow-2xl border-4 border-green-500/50">
+                <h3 class="text-xl font-bold mb-3 flex items-center text-yellow-400">
+                    <span class="mr-2">💳</span> STATUS WEB3
+                </h3>
+                <p id="web3-status" class="text-sm mb-4 text-red-400">Loading Ethers.js...</p>
+                <p id="wallet-address" class="text-xs font-mono mb-4 hidden"></p>
+                
+                <button id="connect-wallet-btn" onclick="connectWallet()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition duration-300 disabled:opacity-50">
+                    HUBUNGKAN DOMPET SOMNIA
+                </button>
+                
+                <button id="disconnect-wallet-btn" onclick="disconnectWallet()" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-xl transition duration-300 hidden mt-3">
+                    DISCONNECT
+                </button>
+
+                 <!-- Tombol Start Game (Hanya muncul jika terkoneksi) -->
+                <div id="game-controls" class="mt-4 hidden">
+                    <div class="mb-3 p-3 bg-red-700 rounded-lg text-white font-semibold text-center shadow-inner border border-red-500">
+                        Biaya Masuk: <span id="fee-display" class="text-yellow-400 font-bold">0 SOMI</span>
+                    </div>
+                    <button id="start-game-btn" onclick="handleStartGame()" class="w-full bg-yellow-500 hover:bg-yellow-600 text-red-900 font-extrabold text-lg py-3 rounded-xl shadow-[0_0_20px_rgba(255,255,0,0.7)] transition duration-300 disabled:opacity-50">
+                        MULAI BERMAIN
+                    </button>
+                </div>
+            </div>
+
+            <!-- Leaderboard -->
+            <div id="leaderboard-card" class="bg-red-800 p-4 rounded-xl shadow-2xl border-4 border-yellow-400/50">
+                <h2 class="text-2xl font-bold text-yellow-400 mb-4 text-center flex items-center justify-center">
+                    <span class="mr-2">📈</span> PAPAN PERINGKAT
+                </h2>
+                <div class="mb-4 p-2 bg-red-900 rounded text-center border-2 border-red-700">
+                    <p class="text-sm text-gray-300">Total Skor Akumulatif Anda</p>
+                    <p id="total-score-display" class="text-xl font-extrabold text-green-400">0</p>
+                </div>
+                <div id="leaderboard-list" class="space-y-2 max-h-80 overflow-y-auto">
+                    <!-- Leaderboard akan diisi oleh JS -->
+                    <p class="text-center text-gray-400" id="leaderboard-loading">Memuat data...</p>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // =======================================================
+        // KONFIGURASI WEB3 KRITIS (Telah diperbarui dengan Chain ID 5031)
+        // =======================================================
+        const CONTRACT_ADDRESS = "0xD76b767102F2610B0C97FEE84873c1fAa4C7C365"; 
+        const ABI_JSON = '[{"inputs":[{"internalType":"address","name":"_treasury","type":"address"},{"internalType":"uint256","name":"_startFeeWei","type":"uint256"},{"internalType":"uint256","name":"_maxScorePerSubmit","type":"uint256"}],"stateMutability":"nonpayable","type":"constructor"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"player","type":"address"},{"indexed":false,"internalType":"uint256","name":"fee","type":"uint256"}],"name":"GameStarted","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"player","type":"address"},{"indexed":false,"internalType":"uint256","name":"score","type":"uint256"}],"name":"ScoreSubmitted","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"to","type":"address"},{"indexed":false,"internalType":"uint256","name":"amount","type":"uint256"}],"name":"Withdraw","type":"event"},{"inputs":[{"internalType":"uint256","name":"","type":"uint256"}],"name":"allPlayers","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"getTop10","outputs":[{"internalType":"address[]","name":"topPlayers","type":"address[]"},{"internalType":"uint256[]","name":"scores","type":"uint256[]"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"maxScorePerSubmit","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"owner","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"","type":"address"}],"name":"players","outputs":[{"internalType":"uint256","name":"totalScore","type":"uint256"},{"internalType":"uint256","name":"lastPlayed","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"startFeeWei","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"startGame","outputs":[],"stateMutability":"payable","type":"function"},{"inputs":[{"internalType":"uint256","name":"score","type":"uint256"}],"name":"submitScore","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[],"name":"withdraw","outputs":[],"stateMutability":"nonpayable","type":"function"}]';
+        const ABI = JSON.parse(ABI_JSON);
+        // KOREKSI: Chain ID Somnia Mainnet yang benar adalah 5031
+        const SOMNIA_CHAIN_ID = 5031; 
+        const SOMNIA_CHAIN_INFO = {
+            chainId: '0x13a7', // 5031 in hex
+            chainName: 'Somnia Mainnet',
+            nativeCurrency: {
+                name: 'SOMI',
+                symbol: 'SOMI',
+                decimals: 18
+            },
+            rpcUrls: ['https://api.infra.mainnet.somnia.network'],
+            blockExplorerUrls: ['https://explorer.somnia.network']
+        };
+
+        let isWeb3Ready = typeof window.ethers !== 'undefined';
+        let provider = null;
+        let signer = null;
+        let userAddress = null;
+        let currentChainId = null;
+        let contractData = {
+            feeWei: null,
+            maxScore: null,
+            totalScore: '0',
+            leaderboard: [],
+        };
+        let isConnected = false;
+        let isGameStarted = false;
+        let isScoreSubmitted = false;
+
+        // =======================================================
+        // KONFIGURASI GAME
+        // =======================================================
+        const MAP_WIDTH = 21;
+        const MAP_HEIGHT = 13; 
+
+        const PACMAN_START = { x: 10, y: 11 };
+        const GHOST_START_POSITIONS = [
+            { x: 9, y: 5, emoji: '👹', color: '#0000FF' }, // Biru
+            { x: 11, y: 5, emoji: '👺', color: '#00FFFF' }, // Cyan
+            { x: 10, y: 4, emoji: '👿', color: '#FF00FF' }, // Magenta
+            { x: 10, y: 5, emoji: '👻', color: '#FFFF00' }  // Kuning
+        ];
+
+        // 1: Wall (Dinding), 0: Dot (Koin), 2: Power Pellet (Bintang), 3: Empty (Kosong)
+        const INITIAL_MAP = [
+            [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+            [1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+            [1, 0, 1, 1, 1, 0, 1, 0, 1, 1, 1, 0, 1, 0, 1, 1, 1, 0, 1, 0, 1],
+            [1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 1],
+            [1, 0, 1, 0, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 0, 1, 0, 1],
+            [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+            [1, 1, 1, 1, 1, 0, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+            [0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0], 
+            [1, 1, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 0, 1],
+            [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1],
+            [1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1],
+            [1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+            [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+        ];
+
+        let gameState = {};
+        let gameLoopInterval = null;
+        let lastUpdateTime = Date.now();
+        let isPlaying = false;
+
+        function initializeGameMap() {
+            const map = INITIAL_MAP.map(row => [...row]);
+            // Power Pellets
+            map[1][1] = 2;
+            map[1][MAP_WIDTH - 2] = 2;
+            map[MAP_HEIGHT - 2][1] = 2;
+            map[MAP_HEIGHT - 2][MAP_WIDTH - 2] = 2;
+            // Kosongkan area hantu
+            for (let y = 4; y <= 6; y++) {
+                for (let x = 9; x <= 11; x++) {
+                    if (map[y][x] === 0) map[y][x] = 3; 
+                }
+            }
+            return map;
+        }
+
+        function countDots(map) {
+            return map.flat().filter(tile => tile === 0 || tile === 2).length;
+        }
+        
+        function resetGameState() {
+            const initialMap = initializeGameMap();
+            gameState = {
+                map: initialMap,
+                pacman: PACMAN_START,
+                direction: 'RIGHT',
+                nextDirection: 'RIGHT', 
+                score: 0,
+                ghosts: GHOST_START_POSITIONS.map(pos => ({
+                    ...pos,
+                    x: pos.x,
+                    y: pos.y,
+                    direction: 'UP',
+                    isFrightened: false,
+                    isEaten: false,
+                    respawnTimer: 0,
+                })),
+                isPowerActive: false,
+                powerTimer: 0,
+                remainingDots: countDots(initialMap),
+            };
+            isGameStarted = true;
+            isScoreSubmitted = false;
+        }
+        
+        // =======================================================
+        // WEB3 UTILITY DAN HANDLER
+        // =======================================================
+
+        function updateWeb3Status(message, isError = false, isLoading = false, address = null) {
+            const statusEl = document.getElementById('web3-status');
+            const connectBtn = document.getElementById('connect-wallet-btn');
+            const disconnectBtn = document.getElementById('disconnect-wallet-btn');
+            const addressEl = document.getElementById('wallet-address');
+            const gameControls = document.getElementById('game-controls');
+
+            statusEl.textContent = message;
+            statusEl.className = `text-sm mb-4 font-semibold ${isError ? 'text-red-400' : 'text-green-400'}`;
+            connectBtn.disabled = isLoading;
+
+            if (address) {
+                addressEl.textContent = `Address Anda: ${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
+                addressEl.classList.remove('hidden');
+                connectBtn.classList.add('hidden');
+                disconnectBtn.classList.remove('hidden');
+                gameControls.classList.remove('hidden');
+            } else {
+                addressEl.classList.add('hidden');
+                connectBtn.classList.remove('hidden');
+                disconnectBtn.classList.add('hidden');
+                gameControls.classList.add('hidden');
+            }
+        }
+
+        function getContractInstance(readOnly = true) {
+            if (!isWeb3Ready) return null;
+            const activeProvider = readOnly ? provider : signer;
+            if (!activeProvider) return null;
+            return new window.ethers.Contract(CONTRACT_ADDRESS, ABI, activeProvider);
+        }
+
+        async function switchOrAddSomniaNetwork() {
+            try {
+                await window.ethereum.request({
+                    method: 'wallet_switchEthereumChain',
+                    params: [{ chainId: SOMNIA_CHAIN_INFO.chainId }],
+                });
+                return true;
+            } catch (switchError) {
+                // This error code indicates that the chain has not been added to MetaMask.
+                if (switchError.code === 4902) {
+                    try {
+                        await window.ethereum.request({
+                            method: 'wallet_addEthereumChain',
+                            params: [SOMNIA_CHAIN_INFO],
+                        });
+                        return true;
+                    } catch (addError) {
+                        console.error("Gagal menambahkan Somnia Network:", addError);
+                        updateWeb3Status('Gagal menambahkan Somnia Network. Harap tambahkan secara manual.', true);
+                        return false;
+                    }
+                }
+                console.error("Gagal beralih jaringan:", switchError);
+                updateWeb3Status('Gagal beralih jaringan. Coba lagi atau ganti manual.', true);
+                return false;
+            }
+        }
+
+        async function connectWallet() {
+            if (!isWeb3Ready) {
+                updateWeb3Status('Web3 Gagal Dimuat. Game berjalan dalam mode Simulasi.', true);
+                return;
+            }
+            if (!window.ethereum) {
+                updateWeb3Status('MetaMask atau dompet Web3 tidak terdeteksi.', true);
+                return;
+            }
+
+            updateWeb3Status('Menghubungkan ke dompet...', false, true);
+            try {
+                await window.ethereum.request({ method: 'eth_requestAccounts' });
+                
+                provider = new window.ethers.providers.Web3Provider(window.ethereum);
+                signer = provider.getSigner();
+                userAddress = await signer.getAddress();
+
+                const { chainId } = await provider.getNetwork();
+                currentChainId = chainId;
+
+                if (chainId !== SOMNIA_CHAIN_ID) {
+                    updateWeb3Status(`Jaringan Salah! Meminta pindah ke Somnia Mainnet (ID ${SOMNIA_CHAIN_ID}).`, true, true);
+                    const success = await switchOrAddSomniaNetwork();
+                    if (!success) {
+                        isConnected = false;
+                        return;
+                    }
+                    // Setelah switch, provider harus diinisialisasi ulang
+                    provider = new window.ethers.providers.Web3Provider(window.ethereum);
+                    signer = provider.getSigner();
+                    // Setelah sukses switch, kita asumsikan chainId yang baru adalah yang kita minta
+                    currentChainId = SOMNIA_CHAIN_ID; 
+                }
+
+                isConnected = true;
+                updateWeb3Status('Dompet Terhubung. Somnia Mainnet Aktif.', false, false, userAddress);
+                fetchData();
+
+                // Listeners for account/chain changes
+                window.ethereum.on('accountsChanged', () => window.location.reload());
+                window.ethereum.on('chainChanged', () => window.location.reload());
+
+            } catch (error) {
+                console.error("Koneksi Dompet Gagal:", error);
+                updateWeb3Status(`Koneksi ditolak atau terjadi kesalahan.`, true);
+                isConnected = false;
+            }
+        }
+
+        function disconnectWallet() {
+            // Dalam Ethers.js, tidak ada fungsi 'disconnect' eksplisit. 
+            // Kita hanya me-reset state aplikasi dan me-reload halaman.
+            // Dompet akan tetap terhubung, tetapi aplikasi tidak lagi menggunakan akun tersebut.
+            isConnected = false;
+            userAddress = null;
+            updateWeb3Status('Terputus. Harap hubungkan dompet Anda.', false, false, null);
+            document.getElementById('total-score-display').textContent = '0';
+            window.location.reload(); // Cara paling bersih untuk reset
+        }
+
+
+        async function fetchData() {
+            if (!isWeb3Ready || !isConnected) return;
+            const contract = getContractInstance(true);
+            if (!contract) return;
+
+            document.getElementById('leaderboard-loading').textContent = 'Memuat data...';
+
+            try {
+                const [players, scores] = await contract.getTop10();
+                contractData.leaderboard = players.map((addr, index) => ({
+                    address: addr,
+                    score: window.ethers.BigNumber.from(scores[index]).toString(),
+                }));
+
+                if (userAddress) {
+                    const playerData = await contract.players(userAddress);
+                    contractData.totalScore = window.ethers.BigNumber.from(playerData.totalScore).toString();
+                }
+
+                const feeWei = await contract.startFeeWei();
+                contractData.feeWei = feeWei.toString();
+                
+                // Update UI
+                const feeEth = window.ethers.utils.formatEther(contractData.feeWei);
+                document.getElementById('fee-display').textContent = `${feeEth} SOMI`;
+                document.getElementById('total-score-display').textContent = contractData.totalScore;
+                renderLeaderboard();
+
+            } catch (error) {
+                console.error("Gagal mengambil data kontrak:", error);
+                document.getElementById('leaderboard-loading').textContent = 'Gagal memuat Leaderboard.';
+            }
+        }
+
+        async function handleStartGame() {
+            if (!isConnected || !signer || !contractData.feeWei || !isWeb3Ready || isPlaying) {
+                alert("Harap hubungkan dompet Anda atau game sedang berjalan.");
+                return;
+            }
+            updateWeb3Status('Memulai game (menunggu konfirmasi transaksi)...', false, true);
+            
+            try {
+                const contract = getContractInstance(false);
+                const fee = window.ethers.BigNumber.from(contractData.feeWei);
+                const tx = await contract.startGame({ value: fee });
+
+                updateWeb3Status('Transaksi dikirim. Menunggu konfirmasi...', false, true);
+                await tx.wait(); 
+
+                updateWeb3Status('Game Berhasil Dimulai! Transaksi terkonfirmasi.', false, false, userAddress);
+                resetGameState();
+                startGame();
+
+            } catch (error) {
+                console.error("Transaksi startGame Gagal:", error);
+                updateWeb3Status(`Gagal Memulai Game.`, true);
+            }
+        }
+
+        async function handleSubmitScore(finalScore) {
+            if (!isConnected || !signer || isScoreSubmitted || !isWeb3Ready) {
+                console.error("Tidak dapat mengirim skor.");
+                return;
+            }
+
+            const web3MessageEl = document.getElementById('web3-message');
+            web3MessageEl.innerHTML = `<span class="text-yellow-400">Mengirim skor ${finalScore} ke Somnia Mainnet (Menunggu konfirmasi)...</span>`;
+
+            try {
+                const contract = getContractInstance(false);
+                const scoreBN = window.ethers.BigNumber.from(finalScore);
+
+                const tx = await contract.submitScore(scoreBN);
+                web3MessageEl.innerHTML = `<span class="text-yellow-400">Transaksi submitScore dikirim. Menunggu konfirmasi...</span>`;
+                await tx.wait(); 
+
+                web3MessageEl.innerHTML = `<span class="text-green-400">✅ Skor ${finalScore} Berhasil Dicatat di Leaderboard!</span>`;
+                isScoreSubmitted = true;
+                fetchData(); // Refresh leaderboard
+
+            } catch (error) {
+                console.error("Transaksi submitScore Gagal:", error);
+                web3MessageEl.innerHTML = `<span class="text-red-400">❌ Gagal Mencatat Skor.</span>`;
+            }
+        }
+
+
+        // =======================================================
+        // LOGIKA GAME
+        // =======================================================
+
+        function canMove(x, y, dir, map) {
+            let dx = 0, dy = 0;
+            switch (dir) {
+                case 'UP': dy = -1; break;
+                case 'DOWN': dy = 1; break;
+                case 'LEFT': dx = -1; break;
+                case 'RIGHT': dx = 1; break;
+            }
+            const nextX = x + dx;
+            const nextY = y + dy;
+
+            // Handle Terowongan (khusus baris 7)
+            if (nextY === 7 && (nextX < 0 || nextX >= MAP_WIDTH)) return true; 
+
+            if (nextX < 0 || nextX >= MAP_WIDTH || nextY < 0 || nextY >= MAP_HEIGHT || map[nextY][nextX] === 1) {
+                return false;
+            }
+            return true;
+        }
+        
+        function moveGhost(ghost, map, pacmanPos) {
+             if (ghost.isEaten && ghost.respawnTimer > 0) return ghost;
+
+            const moves = [
+                { dx: 0, dy: -1, dir: 'UP' }, { dx: 0, dy: 1, dir: 'DOWN' },
+                { dx: -1, dy: 0, dir: 'LEFT' }, { dx: 1, dy: 0, dir: 'RIGHT' },
+            ];
+            let bestMove = null;
+            let distanceMetric = ghost.isFrightened ? -Infinity : Infinity; 
+            const targetPos = ghost.isFrightened ? { x: MAP_WIDTH - 1, y: 1 } : pacmanPos; 
+
+            for (const move of moves) {
+                const nextX = ghost.x + move.dx;
+                const nextY = ghost.y + move.dy;
+
+                if (canMove(ghost.x, ghost.y, move.dir, map)) {
+                    // Hindari berbalik arah total
+                    if (!((move.dir === 'UP' && ghost.direction === 'DOWN') ||
+                        (move.dir === 'DOWN' && ghost.direction === 'UP') ||
+                        (move.dir === 'LEFT' && ghost.direction === 'RIGHT') ||
+                        (move.dir === 'RIGHT' && ghost.direction === 'LEFT'))) {
+
+                        const distance = Math.hypot(targetPos.x - nextX, targetPos.y - nextY);
+
+                        // Frightened mode: cari jarak TERJAUH (kabur)
+                        // Normal mode: cari jarak TERDEKAT (mengejar)
+                        if ((ghost.isFrightened && distance > distanceMetric) || (!ghost.isFrightened && distance < distanceMetric)) {
+                            distanceMetric = distance;
+                            bestMove = move;
+                        }
+                    }
+                }
+            }
+
+            if (bestMove) {
+                return {
+                    ...ghost, 
+                    x: ghost.x + bestMove.dx,
+                    y: ghost.y + bestMove.dy,
+                    direction: bestMove.dir,
+                };
+            }
+            return ghost; // Tidak bisa bergerak
+        }
+
+        function gameLoop() {
+            if (!isPlaying) return;
+
+            const now = Date.now();
+            const deltaTime = (now - lastUpdateTime) / 1000;
+            lastUpdateTime = now;
+
+            let newMap = gameState.map.map(row => [...row]);
+            let newPacman = { ...gameState.pacman };
+            let newScore = gameState.score;
+            let newGhosts = gameState.ghosts.map(g => ({ ...g }));
+            let newPowerTimer = gameState.powerTimer;
+            let newIsPowerActive = gameState.isPowerActive;
+            let newRemainingDots = gameState.remainingDots;
+            let gameStatus = 'PLAYING';
+            let newDirection = gameState.direction;
+
+            // --- Gerak Sinterklas ---
+            let targetDirection = gameState.nextDirection; 
+
+            if (canMove(newPacman.x, newPacman.y, targetDirection, newMap)) {
+                newDirection = targetDirection;
+            } else {
+                targetDirection = newDirection; // Coba tetap bergerak ke arah lama
+            }
+
+            const nextPacman = { x: newPacman.x, y: newPacman.y };
+            switch (newDirection) {
+                case 'UP': nextPacman.y -= 1; break;
+                case 'DOWN': nextPacman.y += 1; break;
+                case 'LEFT': nextPacman.x -= 1; break;
+                case 'RIGHT': nextPacman.x += 1; break;
+                default: break;
+            }
+
+            // Pindah
+            if (canMove(newPacman.x, newPacman.y, newDirection, newMap)) {
+                newPacman = nextPacman;
+
+                // Handle Terowongan (Wraparound)
+                if (newPacman.x < 0) newPacman.x = MAP_WIDTH - 1;
+                else if (newPacman.x >= MAP_WIDTH) newPacman.x = 0;
+
+                // Makan Dot/Pellet
+                const tile = newMap[newPacman.y][newPacman.x];
+                if (tile === 0) { // Dot
+                    newScore += 10;
+                    newMap[newPacman.y][newPacman.x] = 3; 
+                    newRemainingDots -= 1;
+                } else if (tile === 2) { // Power Pellet
+                    newScore += 50;
+                    newMap[newPacman.y][newPacman.x] = 3; 
+                    newRemainingDots -= 1;
+                    newIsPowerActive = true;
+                    newPowerTimer = 10; 
+                    newGhosts = newGhosts.map(g => ({
+                        ...g,
+                        isFrightened: g.isEaten ? false : true,
+                        isEaten: false,
+                    }));
+                }
+            } else {
+                // Gagal bergerak, coba lagi dengan arah sebelumnya (untuk belokan)
+                newDirection = gameState.direction; 
+            }
+
+            // --- Timer Power Mode ---
+            if (newIsPowerActive) {
+                newPowerTimer -= deltaTime;
+                if (newPowerTimer <= 0) {
+                    newIsPowerActive = false;
+                    newPowerTimer = 0;
+                    newGhosts = newGhosts.map(g => ({ ...g, isFrightened: false, }));
+                }
+            }
+
+            // --- Gerak Grinch (Hantu) ---
+            newGhosts = newGhosts.map(ghost => {
+                // Logika Respawn Time
+                if (ghost.isEaten && ghost.respawnTimer > 0) {
+                    return { ...ghost, respawnTimer: ghost.respawnTimer - deltaTime };
+                }
+                if (ghost.isEaten && ghost.respawnTimer <= 0) {
+                    const initialPos = GHOST_START_POSITIONS.find(p => p.color === ghost.color) || GHOST_START_POSITIONS[0];
+                    return {
+                        ...ghost, x: initialPos.x, y: initialPos.y,
+                        isEaten: false, isFrightened: newIsPowerActive,
+                    };
+                }
+
+                // Normal / Frightened move
+                return moveGhost(ghost, newMap, newPacman);
+            });
+
+            // --- Cek Tabrakan ---
+            for (let i = 0; i < newGhosts.length; i++) {
+                const ghost = newGhosts[i];
+                if (ghost.x === newPacman.x && ghost.y === newPacman.y) {
+                    if (newIsPowerActive && !ghost.isEaten) {
+                        // Kasus 1: Tangkap Grinch
+                        newScore += 200;
+                        newGhosts[i] = {
+                            ...ghost, isEaten: true, isFrightened: false, respawnTimer: 5, 
+                        };
+                    } else if (!newIsPowerActive && !ghost.isEaten) {
+                        // Kasus 2: Grinch Menang
+                        gameStatus = 'GAME_OVER';
+                        break;
+                    }
+                }
+            }
+
+            // --- Cek Kemenangan ---
+            if (newRemainingDots === 0) {
+                gameStatus = 'GAME_WIN';
+            }
+
+            // Update Global State
+            gameState.map = newMap;
+            gameState.pacman = newPacman;
+            gameState.score = newScore;
+            gameState.ghosts = newGhosts;
+            gameState.isPowerActive = newIsPowerActive;
+            gameState.powerTimer = newPowerTimer;
+            gameState.remainingDots = newRemainingDots;
+            gameState.direction = newDirection; // Arah terakhir yang berhasil
+            gameState.nextDirection = targetDirection; // Simpan arah target
+
+            // Update UI dan Check Game End
+            renderGame();
+            if (gameStatus !== 'PLAYING') endGame(gameStatus);
+        }
+
+        function startGame() {
+            if (isPlaying) return;
+            isPlaying = true;
+            document.getElementById('game-overlay').classList.add('hidden');
+            lastUpdateTime = Date.now();
+            gameLoopInterval = setInterval(gameLoop, 150); // Kecepatan game loop (150ms per tick)
+        }
+
+        function endGame(status) {
+            clearInterval(gameLoopInterval);
+            isPlaying = false;
+            
+            const overlay = document.getElementById('game-overlay');
+            const overlayTitle = document.getElementById('overlay-title');
+            const finalScoreEl = document.getElementById('final-score');
+            const web3MessageEl = document.getElementById('web3-message');
+
+            finalScoreEl.textContent = gameState.score;
+
+            if (status === 'GAME_WIN') {
+                overlayTitle.textContent = '🎉 SELAMAT NATAL!';
+                overlayTitle.classList.remove('text-red-500');
+                overlayTitle.classList.add('text-green-500');
+            } else {
+                overlayTitle.textContent = '💔 MISI GAGAL';
+                overlayTitle.classList.remove('text-green-500');
+                overlayTitle.classList.add('text-red-500');
+            }
+
+            if (isConnected && !isScoreSubmitted && isWeb3Ready) {
+                // Submit skor secara otomatis
+                handleSubmitScore(gameState.score);
+            } else if (!isWeb3Ready) {
+                web3MessageEl.innerHTML = `<span class="text-red-400">🚨 GAGAL: Web3 tidak dimuat. Skor tidak dapat dicatat.</span>`;
+            } else if (!isConnected) {
+                 web3MessageEl.innerHTML = `<span class="text-red-400">🚨 GAGAL: Dompet tidak terhubung. Skor tidak dapat dicatat.</span>`;
+            } else if (isScoreSubmitted) {
+                 web3MessageEl.innerHTML = `<span class="text-green-400">✅ Skor berhasil dicatat!</span>`;
+            } else {
+                 web3MessageEl.innerHTML = `<span class="text-yellow-400">Status pencatatan skor sedang diproses...</span>`;
+            }
+
+            overlay.classList.remove('hidden');
+        }
+
+        function setDirection(dir) {
+             if (!isGameStarted) return;
+             gameState.nextDirection = dir;
+             // Jika game belum dimulai, mulai otomatis dengan arah pertama
+             if (!isPlaying && isConnected) startGame(); 
+        }
+
+        // =======================================================
+        // RENDERING UI
+        // =======================================================
+        
+        function renderLeaderboard() {
+            const listEl = document.getElementById('leaderboard-list');
+            listEl.innerHTML = '';
+            
+            if (contractData.leaderboard.length === 0) {
+                listEl.innerHTML = '<p class="text-center text-gray-400">Belum ada skor yang dicatat.</p>';
+                return;
+            }
+
+            contractData.leaderboard.forEach((player, index) => {
+                const isUser = userAddress && player.address.toLowerCase() === userAddress.toLowerCase();
+                const listItem = document.createElement('li');
+                
+                listItem.className = `p-3 rounded-xl flex justify-between items-center font-mono text-sm transition duration-200 shadow-md leaderboard-item ${
+                    isUser ? 'border-l-4 border-blue-400 bg-blue-600/50' : (index < 3 ? 'border-l-4 border-yellow-500 bg-yellow-500/10' : 'bg-gray-700/50')
+                }`;
+
+                listItem.innerHTML = `
+                    <div class="flex items-center">
+                        <span class="font-extrabold text-lg mr-3 w-6 text-center text-white">${index + 1}.</span>
+                        <span class="text-gray-200">
+                            ${player.address.substring(0, 6)}...${player.address.substring(player.address.length - 4)}
+                        </span>
+                    </div>
+                    <span class="font-extrabold text-lg text-green-400">${player.score}</span>
+                `;
+                listEl.appendChild(listItem);
+            });
+        }
+        
+        function renderGame() {
+            const gridEl = document.getElementById('game-grid');
+            const scoreEl = document.getElementById('score-display');
+            const powerEl = document.getElementById('power-status');
+            
+            gridEl.innerHTML = ''; // Kosongkan grid
+            scoreEl.textContent = gameState.score;
+
+            // Update Power Status
+            if (gameState.isPowerActive) {
+                 powerEl.innerHTML = `<span class="text-yellow-300">🛡️ POWER: ${gameState.powerTimer.toFixed(1)}s</span>`;
+            } else {
+                 powerEl.innerHTML = `<span class="text-white/50">MODE NORMAL</span>`;
+            }
+
+            // Kalkulasi ukuran tile agar responsif
+            const containerWidth = gridEl.parentElement.offsetWidth;
+            // Gunakan floor untuk memastikan tile bulat dan tidak ada sisa pixel.
+            const tileScaled = Math.floor(containerWidth / MAP_WIDTH);
+            
+            gridEl.style.gridTemplateColumns = `repeat(${MAP_WIDTH}, ${tileScaled}px)`;
+            gridEl.style.gridTemplateRows = `repeat(${MAP_HEIGHT}, ${tileScaled}px)`;
+            // gridEl.style.width dan height tidak perlu karena width: 100% dan aspect-ratio sudah menangani, 
+            // tapi kita atur untuk kejelasan.
+            gridEl.style.width = `${tileScaled * MAP_WIDTH}px`;
+            gridEl.style.height = `${tileScaled * MAP_HEIGHT}px`;
+
+
+            // Render Tiles
+            gameState.map.forEach((row, y) => {
+                row.forEach((tile, x) => {
+                    const tileDiv = document.createElement('div');
+                    tileDiv.style.width = `${tileScaled}px`;
+                    tileDiv.style.height = `${tileScaled}px`;
+
+                    let content = '';
+                    tileDiv.className = 'flex items-center justify-center relative';
+
+                    if (tile === 1) { // Wall
+                        tileDiv.className += ' wall';
+                    } else if (tile === 0) { // Dot
+                        tileDiv.className += ' dot';
+                    } else if (tile === 2) { // Power Pellet
+                        tileDiv.className += ' power-pellet empty-space';
+                    } else if (tile === 3) { // Empty
+                        tileDiv.className += ' empty-space';
+                    }
+                    
+                    // Render Hantu (Grinch)
+                    const ghost = gameState.ghosts.find(g => g.x === x && g.y === y && !g.isEaten);
+                    if (ghost) {
+                        const grinchEmoji = ghost.isFrightened ? '😨' : ghost.emoji; 
+                        tileDiv.innerHTML = `<div class="ghost" style="color: ${ghost.isFrightened ? '#3B82F6' : ghost.color}; font-size: ${tileScaled * 0.6}px;">${grinchEmoji}</div>`;
+                    }
+
+                    // Render Pacman (Sinterklas) - Selalu di atas hantu jika bertabrakan
+                    const isPacman = gameState.pacman.x === x && gameState.pacman.y === y;
+                    if (isPacman) {
+                        const scale = gameState.isPowerActive ? 'scale-125' : 'scale-100';
+                        const emoji = gameState.isPowerActive ? '🦸' : '🎅'; 
+                        tileDiv.innerHTML = `<div class="pacman transition-transform duration-100 ${scale}" style="font-size: ${tileScaled * 0.7}px;">${emoji}</div>`;
+                    }
+
+                    gridEl.appendChild(tileDiv);
+                });
+            });
+        }
+        
+        // =======================================================
+        // INITIALISASI
+        // =======================================================
+
+        function init() {
+            resetGameState();
+            renderGame(); 
+            
+            // Check Ethers.js status
+            if (!isWeb3Ready) {
+                 const feeEl = document.getElementById('fee-display');
+                 const connectBtn = document.getElementById('connect-wallet-btn');
+                 
+                 updateWeb3Status('🚨 Ethers.js GAGAL dimuat. Web3 tidak aktif (Simulasi Offline).', true);
+                 connectBtn.disabled = true;
+                 connectBtn.textContent = 'WEB3 NONAKTIF';
+                 feeEl.textContent = 'GRATIS (Simulasi)';
+                 
+                 // Sediakan tombol mulai game untuk mode simulasi
+                 document.getElementById('game-controls').classList.remove('hidden');
+                 document.getElementById('start-game-btn').textContent = 'MULAI BERMAIN (Simulasi)';
+                 
+                 // Override start game handler untuk mode simulasi
+                 window.handleStartGame = () => {
+                     if (isPlaying) return;
+                     isGameStarted = true;
+                     startGame();
+                     updateWeb3Status('Mode Simulasi. Skor tidak dicatat di blockchain.', true);
+                 };
+            } else {
+                 updateWeb3Status('Ethers.js siap. Silakan hubungkan dompet Anda.', false);
+                 fetchData();
+            }
+
+            // Keyboard input
+            document.addEventListener('keydown', (e) => {
+                if (['ArrowUp', 'w', 'W'].includes(e.key)) setDirection('UP');
+                else if (['ArrowDown', 's', 'S'].includes(e.key)) setDirection('DOWN');
+                else if (['ArrowLeft', 'a', 'A'].includes(e.key)) setDirection('LEFT');
+                else if (['ArrowRight', 'd', 'D'].includes(e.key)) setDirection('RIGHT');
+            });
+            
+            // Atur ukuran game grid awal
+            window.addEventListener('resize', renderGame); 
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>
+
