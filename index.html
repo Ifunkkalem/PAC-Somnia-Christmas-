@@ -158,6 +158,7 @@
                 </h3>
                 <p id="web3-status" class="text-sm mb-4 text-red-400">Loading Ethers.js...</p>
                 <p id="wallet-address" class="text-xs font-mono mb-2 hidden"></p>
+                <!-- Saldo Dompet Ditampilkan di sini -->
                 <p id="wallet-balance" class="text-lg font-extrabold mb-4 text-yellow-300 hidden"></p>
                 
                 <button id="connect-wallet-btn" onclick="connectWallet()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition duration-300 disabled:opacity-50">
@@ -171,7 +172,7 @@
                  <!-- Tombol Start Game (Hanya muncul jika terkoneksi) -->
                 <div id="game-controls" class="mt-4 hidden">
                     <div class="mb-3 p-3 bg-red-700 rounded-lg text-white font-semibold text-center shadow-inner border border-red-500">
-                        Biaya Masuk: <span id="fee-display" class="text-yellow-400 font-bold">0.01 SOMI</span>
+                        Biaya Masuk: <span id="fee-display" class="text-yellow-400 font-bold">Memuat biaya...</span>
                     </div>
                     <button id="start-game-btn" onclick="handleStartGame()" class="w-full bg-yellow-500 hover:bg-yellow-600 text-red-900 font-extrabold text-lg py-3 rounded-xl shadow-[0_0_20px_rgba(255,255,0,0.7)] transition duration-300 disabled:opacity-50">
                         MULAI BERMAIN
@@ -223,15 +224,17 @@
         let signer = null;
         let userAddress = null;
         let currentChainId = null;
-        let userBalance = '0.00'; // Saldo dompet pengguna
+        let userBalanceWei = window.ethers ? window.ethers.BigNumber.from(0) : 0; // Saldo dompet pengguna dalam BigNumber (Wei)
         let contractData = {
-            feeWei: '10000000000000000', // Default 0.01 SOMI (10^16 Wei)
+            // Default 0.01 SOMI (10^16 Wei) - Nilai ini HARUS TEPAT
+            feeWei: window.ethers ? window.ethers.BigNumber.from('10000000000000000') : '10000000000000000', 
             maxScore: null,
             totalScore: '0',
             leaderboard: [],
         };
         let isConnected = false;
         let isGameStarted = false;
+        let isPlaying = false; // Status game sedang berjalan
         let isScoreSubmitted = false;
 
         // =======================================================
@@ -268,7 +271,6 @@
         let gameState = {};
         let gameLoopInterval = null;
         let lastUpdateTime = Date.now();
-        let isPlaying = false;
 
         function initializeGameMap() {
             const map = INITIAL_MAP.map(row => [...row]);
@@ -319,6 +321,19 @@
         // WEB3 UTILITY DAN HANDLER
         // =======================================================
 
+        // Utility untuk format Ethers.js BigNumber to string
+        function formatEther(wei) {
+            if (!window.ethers || !wei) return '0.00';
+            try {
+                // Pastikan input adalah BigNumber atau string/number yang valid untuk BigNumber
+                const bigNumberWei = typeof wei === 'string' || typeof wei === 'number' ? window.ethers.BigNumber.from(wei) : wei;
+                return window.ethers.utils.formatEther(bigNumberWei);
+            } catch (e) {
+                console.error("Gagal format Wei:", e);
+                return '0.00';
+            }
+        }
+
         function updateWeb3Status(message, isError = false, isLoading = false, address = null) {
             const statusEl = document.getElementById('web3-status');
             const connectBtn = document.getElementById('connect-wallet-btn');
@@ -326,10 +341,12 @@
             const addressEl = document.getElementById('wallet-address');
             const balanceEl = document.getElementById('wallet-balance');
             const gameControls = document.getElementById('game-controls');
+            const startGameBtn = document.getElementById('start-game-btn');
 
             statusEl.textContent = message;
             statusEl.className = `text-sm mb-4 font-semibold ${isError ? 'text-red-400' : 'text-green-400'}`;
             connectBtn.disabled = isLoading;
+            startGameBtn.disabled = isLoading; // Nonaktifkan tombol saat sedang memuat/bertansaksi
 
             if (address) {
                 addressEl.textContent = `Alamat Anda: ${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
@@ -340,7 +357,8 @@
                 gameControls.classList.remove('hidden');
                 
                 // Update balance on status change
-                balanceEl.textContent = `Saldo Anda: ${parseFloat(userBalance).toFixed(4)} SOMI`;
+                const balanceDisplay = formatEther(userBalanceWei);
+                balanceEl.textContent = `Saldo Anda: ${parseFloat(balanceDisplay).toFixed(4)} SOMI`;
             } else {
                 addressEl.classList.add('hidden');
                 balanceEl.classList.add('hidden');
@@ -388,11 +406,12 @@
             if (!isConnected || !userAddress || !provider) return;
             try {
                 const balanceWei = await provider.getBalance(userAddress);
-                userBalance = window.ethers.utils.formatEther(balanceWei);
-                document.getElementById('wallet-balance').textContent = `Saldo Anda: ${parseFloat(userBalance).toFixed(4)} SOMI`;
+                userBalanceWei = balanceWei;
+                document.getElementById('wallet-balance').textContent = `Saldo Anda: ${parseFloat(formatEther(userBalanceWei)).toFixed(4)} SOMI`;
             } catch (error) {
                 console.error("Gagal mengambil saldo dompet:", error);
                 document.getElementById('wallet-balance').textContent = `Gagal memuat saldo.`;
+                userBalanceWei = window.ethers.BigNumber.from(0);
             }
         }
 
@@ -418,7 +437,7 @@
                 currentChainId = chainId;
 
                 if (chainId !== SOMNIA_CHAIN_ID) {
-                    updateWeb3Status(`Jaringan Salah! Meminta pindah ke Somnia Mainnet (ID ${SOMnia_CHAIN_ID}).`, true, true);
+                    updateWeb3Status(`Jaringan Salah! Meminta pindah ke Somnia Mainnet (ID ${SOMNIA_CHAIN_ID}).`, true, true);
                     const success = await switchOrAddSomniaNetwork();
                     if (!success) {
                         isConnected = false;
@@ -449,7 +468,7 @@
         function disconnectWallet() {
             isConnected = false;
             userAddress = null;
-            userBalance = '0.00';
+            userBalanceWei = window.ethers.BigNumber.from(0);
             updateWeb3Status('Terputus. Harap hubungkan dompet Anda.', false, false, null);
             document.getElementById('total-score-display').textContent = '0';
             window.location.reload(); 
@@ -461,50 +480,79 @@
             const contract = getContractInstance(true);
             if (!contract) return;
 
-            document.getElementById('leaderboard-loading').textContent = 'Memuat data...';
+            // Pastikan biaya masuk menampilkan loading state
             document.getElementById('fee-display').textContent = 'Memuat biaya...';
-            await fetchWalletBalance(); // Refresh saldo
+            document.getElementById('leaderboard-loading').textContent = 'Memuat data...';
+
+            // Selalu refresh saldo setiap kali memanggil data
+            await fetchWalletBalance(); 
 
             try {
+                // 1. Ambil Leaderboard
                 const [players, scores] = await contract.getTop10();
                 contractData.leaderboard = players.map((addr, index) => ({
                     address: addr,
                     score: window.ethers.BigNumber.from(scores[index]).toString(),
                 }));
 
+                // 2. Ambil Total Skor Pemain
                 if (userAddress) {
                     const playerData = await contract.players(userAddress);
                     contractData.totalScore = window.ethers.BigNumber.from(playerData.totalScore).toString();
                 }
 
+                // 3. Ambil Biaya Masuk
                 const feeWei = await contract.startFeeWei();
-                contractData.feeWei = feeWei.toString();
+                contractData.feeWei = feeWei; // Simpan sebagai BigNumber
                 
                 // Update UI
-                const feeEth = window.ethers.utils.formatEther(contractData.feeWei);
+                const feeEth = formatEther(contractData.feeWei);
                 document.getElementById('fee-display').textContent = `${feeEth} SOMI`;
                 document.getElementById('total-score-display').textContent = contractData.totalScore;
                 renderLeaderboard();
 
             } catch (error) {
                 console.error("Gagal mengambil data kontrak:", error);
+                // Fallback UI update jika gagal mengambil data
+                const feeEth = formatEther(contractData.feeWei); 
+                document.getElementById('fee-display').textContent = `${feeEth} SOMI (Gagal memuat dari kontrak)`;
                 document.getElementById('leaderboard-loading').textContent = 'Gagal memuat Leaderboard.';
-                document.getElementById('fee-display').textContent = '0.01 SOMI (Fallback)';
             }
         }
 
         async function handleStartGame() {
-            if (!isConnected || !signer || !contractData.feeWei || !isWeb3Ready || isPlaying) {
-                // Mengganti alert() dengan pesan di konsol atau UI
-                console.error("Harap hubungkan dompet Anda atau game sedang berjalan.");
+            if (!isConnected || !signer || !contractData.feeWei || !isWeb3Ready) {
+                console.error("Harap hubungkan dompet Anda dan tunggu biaya dimuat.");
                 return;
             }
+
+            if (isPlaying) {
+                 updateWeb3Status('Game sudah berjalan. Selesaikan yang ini dulu!', true);
+                 return;
+            }
+
+            const fee = contractData.feeWei;
+            const feeEth = formatEther(fee);
+            const gasEstimate = window.ethers.BigNumber.from('21000000000000000'); // Estimasi konservatif 0.021 SOMI untuk gas
+            const totalRequiredWei = fee.add(gasEstimate);
+
+            // PRE-CHECK: Cek Saldo
+            if (userBalanceWei.lt(fee)) {
+                updateWeb3Status(`🚨 Saldo TIDAK CUKUP. Diperlukan minimal ${feeEth} SOMI. Saldo Anda: ${formatEther(userBalanceWei)} SOMI.`, true);
+                return;
+            }
+            
             updateWeb3Status('Memulai game (menunggu konfirmasi transaksi)...', false, true);
             
             try {
                 const contract = getContractInstance(false);
-                const fee = window.ethers.BigNumber.from(contractData.feeWei);
-                const tx = await contract.startGame({ value: fee });
+                
+                // Panggil fungsi `startGame` dengan nilai (value) yang diperlukan
+                const tx = await contract.startGame({ 
+                    value: fee,
+                    // Tambahkan estimasi gas limit yang aman, misalnya 200,000 unit
+                    gasLimit: window.ethers.BigNumber.from(200000) 
+                });
 
                 updateWeb3Status('Transaksi dikirim. Menunggu konfirmasi...', false, true);
                 await tx.wait(); 
@@ -516,9 +564,25 @@
 
             } catch (error) {
                 console.error("Transaksi startGame Gagal:", error);
-                // Cek jika error adalah penolakan user atau dana tidak cukup
-                const errorMessage = error.message.includes('user rejected transaction') ? 'Transaksi ditolak oleh pengguna.' : 'Transaksi gagal. Cek saldo atau gas.';
-                updateWeb3Status(`Gagal Memulai Game: ${errorMessage}`, true);
+
+                let userMessage = 'Transaksi gagal. Periksa saldo, gas, atau koneksi RPC Anda.';
+
+                if (error.code === 4001) {
+                    userMessage = 'Transaksi ditolak oleh pengguna (Dompet MetaMask/Web3).';
+                } else if (error.message && error.message.includes('insufficient funds')) {
+                    userMessage = 'Dana dompet tidak cukup (termasuk biaya gas).';
+                } else if (error.message && error.message.includes('gas required exceeds allowance')) {
+                    userMessage = 'Gas limit terlalu rendah. Coba lagi dengan gas lebih tinggi.';
+                } else if (error.message && error.message.includes('reverted')) {
+                    // Ini menandakan kegagalan logika pada smart contract
+                    userMessage = 'Kegagalan kontrak (Revert). Cek konsol untuk detail error kontrak.';
+                }
+
+                updateWeb3Status(`❌ Gagal Memulai Game: ${userMessage}`, true);
+                // Tambahkan pesan tambahan untuk user
+                const startGameBtn = document.getElementById('start-game-btn');
+                startGameBtn.textContent = 'COBA LAGI';
+                startGameBtn.disabled = false;
             }
         }
 
@@ -554,6 +618,9 @@
         // LOGIKA GAME
         // =======================================================
 
+        let gameLoopInterval = null;
+        let lastUpdateTime = Date.now();
+
         function canMove(x, y, dir, map) {
             let dx = 0, dy = 0;
             switch (dir) {
@@ -583,7 +650,7 @@
             ];
             let bestMove = null;
             let distanceMetric = ghost.isFrightened ? -Infinity : Infinity; 
-            const targetPos = ghost.isFrightened ? { x: MAP_WIDTH - 1, y: 1 } : pacmanPos; 
+            const targetPos = ghost.isEaten ? { x: 10, y: 5 } : (ghost.isFrightened ? { x: MAP_WIDTH - 1, y: 1 } : pacmanPos); 
 
             for (const move of moves) {
                 const nextX = ghost.x + move.dx;
@@ -599,7 +666,8 @@
                         const distance = Math.hypot(targetPos.x - nextX, targetPos.y - nextY);
 
                         // Frightened mode: cari jarak TERJAUH (kabur)
-                        // Normal mode: cari jarak TERDEKAT (mengejar)
+                        // Eaten mode: cari jarak TERDEKAT ke respawn point
+                        // Normal mode: cari jarak TERDEKAT ke pacman
                         if ((ghost.isFrightened && distance > distanceMetric) || (!ghost.isFrightened && distance < distanceMetric)) {
                             distanceMetric = distance;
                             bestMove = move;
@@ -618,6 +686,7 @@
             }
             return ghost; // Tidak bisa bergerak
         }
+
 
         function gameLoop() {
             if (!isPlaying) return;
@@ -757,7 +826,8 @@
             isPlaying = true;
             document.getElementById('game-overlay').classList.add('hidden');
             lastUpdateTime = Date.now();
-            gameLoopInterval = setInterval(gameLoop, 150); // Kecepatan game loop (150ms per tick)
+            // Tingkatkan kecepatan game loop menjadi 100ms per tick untuk rasa yang lebih cepat
+            gameLoopInterval = setInterval(gameLoop, 100); 
         }
 
         function endGame(status) {
@@ -798,8 +868,8 @@
         }
 
         function setDirection(dir) {
-             if (!isGameStarted && isConnected) {
-                 // Mulai game otomatis dengan arah pertama jika sudah terhubung
+             if (!isGameStarted && isConnected && !isPlaying) {
+                 // Mulai game otomatis dengan arah pertama jika sudah terhubung dan belum bermain
                  handleStartGame(); 
              }
              if (!isGameStarted) return;
@@ -915,9 +985,8 @@
             resetGameState();
             renderGame(); 
             
-            // Mengatur default biaya masuk 0.01 SOMI
-            document.getElementById('fee-display').textContent = '0.01 SOMI (Memuat data kontrak...)';
-
+            // Mengatur default biaya masuk 0.01 SOMI sebelum data kontrak diambil
+            document.getElementById('fee-display').textContent = `${formatEther(contractData.feeWei)} SOMI (Memuat data kontrak...)`;
 
             // Check Ethers.js status
             if (!isWeb3Ready) {
@@ -941,7 +1010,6 @@
                  };
             } else {
                  updateWeb3Status('Ethers.js siap. Silakan hubungkan dompet Anda.', false);
-                 // Tidak memanggil fetchData() di sini, biarkan connectWallet() yang memanggil
             }
 
             // Keyboard input
