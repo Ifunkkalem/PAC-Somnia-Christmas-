@@ -1,8 +1,7 @@
 <!--
   PAC-MAN WEB3: Sinterklas VS Grinch
-  Dibuat menggunakan HTML, Tailwind CSS, dan JavaScript murni.
-  Mengintegrasikan koneksi dompet Web3 dan interaksi kontrak pintar
-  untuk memulai permainan dan mengirim skor.
+  Tata Letak Baru: Dua Bilah Responsif (Sidebar & Konten Utama)
+  Mengintegrasikan Web3, Game Engine, dan Firebase Leaderboard.
 -->
 <!DOCTYPE html>
 <html lang="id">
@@ -19,9 +18,9 @@
         import { getFirestore, doc, setDoc, collection, query, limit, onSnapshot, orderBy, getDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Global Firebase variables will be defined here by the environment.
+        // Variabel global Firebase
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'pacman-christmas-app';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? __firebase_config : null;
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
         let db, auth;
@@ -30,7 +29,8 @@
 
         if (firebaseConfig) {
             setLogLevel('debug'); // Aktifkan log Firebase
-            const app = initializeApp(firebaseConfig);
+            const parsedConfig = JSON.parse(firebaseConfig);
+            const app = initializeApp(parsedConfig);
             db = getFirestore(app);
             auth = getAuth(app);
 
@@ -51,7 +51,13 @@
                 if (user) {
                     userId = user.uid;
                 } else {
-                    userId = null;
+                    // Jika pengguna log-out, coba masuk anonim
+                    signInAnonymously(auth).then(anonUser => {
+                        userId = anonUser.user.uid;
+                    }).catch(err => {
+                        console.error("Gagal masuk anonim:", err);
+                        userId = 'guest-' + crypto.randomUUID(); // Fallback ID
+                    });
                 }
                 isAuthReady = true;
                 // Panggil fungsi yang bergantung pada Auth setelah otentikasi
@@ -78,28 +84,67 @@
             font-family: 'Inter', sans-serif;
             background-color: #0b1a2a; /* Dark Blue Christmas Theme */
             color: #ffffff;
+            min-height: 100vh;
+        }
+        
+        /* Tata Letak Utama - Flex/Grid Responsif */
+        #main-layout {
             display: flex;
-            flex-direction: column;
-            align-items: center;
-            padding: 10px;
+            flex-direction: column; /* Mobile: Stacks vertically */
+            max-width: 1200px;
+            width: 95%;
+            margin: 20px auto;
+            border-radius: 20px;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.7);
+            background-color: #1a2c42;
+            overflow: hidden;
         }
-        .container {
-            max-width: 400px;
-            width: 100%;
-            margin-top: 20px;
+
+        @media (min-width: 768px) {
+            #main-layout {
+                flex-direction: row; /* Desktop: Two columns */
+                min-height: 700px;
+            }
+        }
+
+        /* Panel Kiri (Sidebar) */
+        #left-panel {
+            background-color: #112033; /* Warna Sidebar Lebih Gelap */
             padding: 20px;
-            background-color: #1a2c42; /* Darker panel background */
-            border-radius: 16px;
-            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+            flex-shrink: 0;
+            width: 100%;
+            border-bottom: 2px solid #cc0000;
         }
+        @media (min-width: 768px) {
+            #left-panel {
+                width: 350px; /* Lebar tetap untuk desktop */
+                border-right: 2px solid #cc0000;
+                border-bottom: none;
+                overflow-y: auto; /* Agar bisa di-scroll jika tinggi */
+            }
+        }
+        
+        /* Panel Kanan (Konten Utama) */
+        #right-panel {
+            flex-grow: 1;
+            padding: 20px;
+            background-color: #1a2c42;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+        }
+        
         canvas {
             background-color: #2c4766;
             display: block;
             border: 4px solid #cc0000; /* Red border */
             border-radius: 8px;
             box-shadow: 0 0 15px rgba(255, 255, 255, 0.2);
+            width: 100%;
+            height: auto;
+            max-width: 400px; /* Ukuran maksimal kanvas */
         }
-        .btn-green {
+        .btn-primary {
             background-color: #16a34a;
             color: white;
             padding: 12px 20px;
@@ -112,14 +157,14 @@
             justify-content: center;
             align-items: center;
         }
-        .btn-green:hover {
+        .btn-primary:hover {
             background-color: #15803d;
         }
-        .btn-green:active {
+        .btn-primary:active {
             box-shadow: none;
             transform: translateY(4px);
         }
-        .btn-red {
+        .btn-secondary {
             background-color: #cc0000;
             color: white;
             padding: 12px 20px;
@@ -129,10 +174,10 @@
             cursor: pointer;
             box-shadow: 0 4px #990000;
         }
-        .btn-red:hover {
+        .btn-secondary:hover {
             background-color: #990000;
         }
-        .btn-red:active {
+        .btn-secondary:active {
             box-shadow: none;
             transform: translateY(4px);
         }
@@ -149,13 +194,13 @@
         .control-btn {
             background-color: #3b82f6;
             color: white;
-            width: 60px;
-            height: 60px;
+            width: 50px;
+            height: 50px;
             border-radius: 12px;
             display: flex;
             justify-content: center;
             align-items: center;
-            font-size: 24px;
+            font-size: 20px;
             font-weight: bold;
             transition: background-color 0.1s, transform 0.1s;
             box-shadow: 0 3px #2563eb;
@@ -191,60 +236,110 @@
 </head>
 <body>
 
-    <div class="container mb-6">
-        <h1 class="text-3xl font-bold text-center mb-6 text-[#16a34a]">SINTERKLAS VS GRINCH 🎄</h1>
+    <div id="main-layout">
+        
+        <!-- ========================================================= -->
+        <!-- BILAH KIRI: KONTROL, WALLET, DAN NAVIGATION -->
+        <!-- ========================================================= -->
+        <div id="left-panel">
+            <h1 class="text-3xl font-black text-center mb-6 text-[#16a34a] border-b pb-4 border-[#cc0000]">
+                SINTERKLAS VS GRINCH 
+                <span class="text-xl block text-white font-bold">Pac-Man Web3</span>
+            </h1>
+            
+            <div class="space-y-4 mb-8">
+                
+                <!-- Info Status Koneksi -->
+                <div id="connection-status-info" class="p-3 rounded-xl bg-[#2c4766] border border-[#16a34a]">
+                    <p class="font-bold text-lg mb-2 text-[#facc15]">Status Dompet:</p>
+                    <button id="connect-wallet-btn" class="w-full btn-primary">
+                        <span id="wallet-status">Hubungkan Dompet</span>
+                    </button>
+                    
+                    <!-- Detail Dompet (Hanya muncul jika terkoneksi) -->
+                    <div id="wallet-details" class="hidden text-sm mt-3 space-y-1">
+                        <div class="truncate">Alamat: <span id="connected-address" class="text-yellow-300 font-medium"></span></div>
+                        <div id="user-balance">Saldo: Memuat...</div>
+                        <div class="text-xs italic text-gray-400">Jaringan: Somnia Mainnet (5031)</div>
+                    </div>
+                </div>
 
-        <!-- Bagian Koneksi Dompet & Input Nama -->
-        <div class="space-y-4 mb-8 p-4 bg-[#2c4766] rounded-xl shadow-lg">
-            <button id="connect-wallet-btn" class="w-full btn-green">
-                <span id="wallet-status">Dompet Tidak Terhubung</span>
-            </button>
-            <div id="wallet-info" class="hidden text-center text-sm text-gray-300 bg-[#1a2c42] p-2 rounded-lg">
-                Dompet Tersambung: <span id="connected-address"></span>
-                <div id="user-balance">Saldo: Memuat...</div>
+                <!-- Input & Tombol Mulai Game -->
+                <div id="game-controls" class="space-y-3 p-3 rounded-xl bg-[#cc0000] shadow-lg">
+                     <p class="font-bold text-lg text-white">Siap Bermain?</p>
+                     
+                     <input type="text" id="display-name-input" placeholder="Nama Tampilan (Max 20 Karakter)" maxlength="20" class="w-full p-3 rounded-xl bg-[#1a2c42] text-white border border-white focus:ring focus:ring-[#facc15] focus:border-[#facc15]">
+                     
+                     <button id="start-game-btn" class="w-full btn-primary disabled:bg-gray-500 disabled:shadow-none">
+                         MULAI BERMAIN
+                     </button>
+                     <div class="text-xs text-center text-gray-200">
+                         Biaya Mulai: <span id="start-fee-display">0.0</span> SOMI
+                     </div>
+                </div>
             </div>
             
-            <input type="text" id="display-name-input" placeholder="Masukkan Nama Tampilan (Maks 20 karakter)" maxlength="20" class="w-full p-3 rounded-xl bg-[#1a2c42] text-white border border-[#16a34a] focus:ring focus:ring-[#16a34a] focus:border-[#16a34a]">
+            <!-- Navigasi View -->
+            <div class="border-t pt-4 border-gray-600">
+                <p class="font-bold text-lg mb-3">Tampilan Konten:</p>
+                <div class="flex space-x-3">
+                    <button id="nav-leaderboard" class="flex-1 btn-secondary" onclick="switchView('leaderboard')">
+                        Papan Peringkat
+                    </button>
+                    <button id="nav-game" class="flex-1 btn-primary disabled:bg-gray-500" onclick="switchView('game')" disabled>
+                        Tampilan Game
+                    </button>
+                </div>
+                <div class="text-xs text-gray-400 mt-2 italic">
+                     UID Anda: <span id="user-firebase-id">Memuat...</span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- ========================================================= -->
+        <!-- BILAH KANAN: KONTEN UTAMA (Leaderboard / Game) -->
+        <!-- ========================================================= -->
+        <div id="right-panel">
+            <div id="content-panel" class="w-full h-full flex flex-col items-center">
             
-            <button id="start-game-btn" class="w-full btn-green disabled:bg-gray-500 disabled:shadow-none" disabled>
-                MULAI BERMAIN
-            </button>
+                <!-- 1. Tampilan Papan Peringkat (Default) -->
+                <div id="leaderboard-view" class="w-full max-w-lg">
+                    <h2 class="text-2xl font-bold text-center mb-6 text-[#facc15]">PAPAN PERINGKAT GLOBAL</h2>
+                    <div id="leaderboard-list" class="space-y-2">
+                        <!-- Data peringkat akan dimuat di sini -->
+                        <div class="text-center text-gray-300 p-4">Memuat peringkat...</div>
+                    </div>
+                </div>
+                
+                <!-- 2. Tampilan Game (Tersembunyi Awalnya) -->
+                <div id="game-view" class="w-full max-w-lg hidden flex flex-col items-center">
+                    <h2 class="text-2xl font-bold mb-4 text-[#facc15]">AREA BERMAIN</h2>
+                    
+                    <div class="flex justify-between items-center w-full max-w-xs mb-4">
+                        <div class="text-xl font-bold">Skor: <span id="current-score-display">0</span></div>
+                        <div id="game-message" class="text-lg font-extrabold text-red-500" style="display:none;"></div>
+                    </div>
+                    
+                    <canvas id="pacman-canvas"></canvas>
+                    
+                    <!-- Kontrol Tombol Mobile/Sentuh -->
+                    <div class="flex flex-col items-center mt-6">
+                        <p class="text-sm font-bold mb-2">Kontrol Sentuh</p>
+                        <div class="grid grid-cols-3 gap-3 w-48">
+                            <div></div>
+                            <button class="control-btn" data-key="w">▲</button>
+                            <div></div>
+                            <button class="control-btn" data-key="a">◀</button>
+                            <button class="control-btn" data-key="s">▼</button>
+                            <button class="control-btn" data-key="d">▶</button>
+                        </div>
+                        <p class="text-sm text-gray-400 mt-4">Gunakan WASD/panah di keyboard untuk desktop.</p>
+                    </div>
+                </div>
+                
+            </div>
         </div>
         
-        <!-- Papan Skor Global -->
-        <div id="leaderboard-section" class="p-4 bg-[#cc0000] rounded-xl shadow-lg">
-            <h2 class="text-xl font-bold text-center mb-4 text-white">PAPAN PERINGKAT TERATAS (AKUMULASI)</h2>
-            <div class="text-xs text-center mb-2 italic text-gray-200">
-                ID Anda: <span id="user-firebase-id">Memuat...</span>
-            </div>
-            <div id="leaderboard-list">
-                <!-- Data peringkat akan dimuat di sini -->
-                <div class="text-center text-gray-300">Memuat peringkat...</div>
-            </div>
-        </div>
-    </div>
-    
-    <!-- Bagian Game -->
-    <div id="game-container" class="container" style="display:none;">
-        <div class="flex justify-between items-center mb-4">
-            <div class="text-lg font-bold">Skor Saat Ini: <span id="current-score-display">0</span></div>
-            <div class="text-sm text-gray-400">UID Pengguna: <span id="game-user-id"></span></div>
-        </div>
-        <canvas id="pacman-canvas"></canvas>
-        <div id="game-message" class="text-center text-xl font-bold mt-4 text-[#facc15]" style="display:none;">PERMAINAN BERLANGSUNG...</div>
-        
-        <!-- Kontrol Tombol Mobile -->
-        <div class="flex flex-col items-center mt-6">
-            <div class="grid grid-cols-3 gap-3 w-48">
-                <div></div>
-                <button class="control-btn" data-key="w">^</button>
-                <div></div>
-                <button class="control-btn" data-key="a"><</button>
-                <button class="control-btn" data-key="s">v</button>
-                <button class="control-btn" data-key="d">></button>
-            </div>
-            <p class="text-sm text-gray-400 mt-4">Anda juga bisa menggunakan tombol WASD/panah di keyboard.</p>
-        </div>
     </div>
 
     <!-- Modal Pesan Kustom -->
@@ -253,8 +348,8 @@
             <h3 id="modal-title" class="text-2xl font-bold mb-4 text-[#facc15]">Pesan</h3>
             <p id="modal-message" class="mb-6 text-gray-200"></p>
             <div class="flex flex-col space-y-3">
-                <button id="modal-network-btn" class="btn-red hidden">Pindah ke Somnia Mainnet (5031)</button>
-                <button id="modal-close-btn" class="btn-green">Tutup</button>
+                <button id="modal-network-btn" class="btn-secondary hidden">Pindah ke Somnia Mainnet (5031)</button>
+                <button id="modal-close-btn" class="btn-primary">Tutup</button>
             </div>
         </div>
     </div>
@@ -266,7 +361,7 @@
 
     // Alamat Kontrak pintar PacmanLeaderboard di Somnia Mainnet (EIP-55 Checksum)
     const CONTRACT_ADDRESS = "0xD76b767102F2610b0c97Fee84873C1fAA4C7c365";
-    // Chain ID yang BENAR berdasarkan masukan dan gambar pengguna: 5031
+    // Chain ID yang BENAR: 5031
     const REQUIRED_CHAIN_ID = 5031; 
     const REQUIRED_NETWORK_NAME = "Somnia Mainnet";
     const REQUIRED_NETWORK_PARAMS = [{
@@ -277,7 +372,7 @@
             symbol: 'SOMI',
             decimals: 18
         },
-        rpcUrls: ['https://somnia-rpc.publicnode.com'], // Menggunakan RPC yang latensinya bagus dari gambar
+        rpcUrls: ['https://somnia-rpc.publicnode.com'], 
         blockExplorerUrls: ['https://explorer.somnia.network']
     }];
     
@@ -286,8 +381,6 @@
         "function startGame(string memory _username) public payable returns (uint256)",
         "function submitScore(uint256 _score, uint256 _gameId, string memory _username) public",
         "function startFeeWei() view returns (uint256)",
-        "function maxScorePerSubmit() view returns (uint256)",
-        "function players(address) view returns (uint256 totalScore, uint256 lastPlayed)",
         "event GameStarted(address indexed player, uint256 gameId, uint256 timestamp)",
         "event ScoreSubmitted(address indexed player, uint256 score, uint256 totalScore, uint256 timestamp)",
     ];
@@ -308,8 +401,25 @@
     const LEADERBOARD_COLLECTION = "leaderboard";
 
     // ====================================================================
-    // 2. UTILITAS
+    // 2. UTILITAS & UI MANAGEMENT
     // ====================================================================
+    
+    let currentView = 'leaderboard'; // 'leaderboard' atau 'game'
+
+    /** Mengganti tampilan konten utama */
+    function switchView(viewName) {
+        if (viewName === 'game' && !gameRunning) {
+             showModal("Peringatan", "Anda harus menekan 'MULAI BERMAIN' untuk mengaktifkan tampilan Game.");
+             return;
+        }
+
+        currentView = viewName;
+        document.getElementById('leaderboard-view').classList.toggle('hidden', viewName !== 'leaderboard');
+        document.getElementById('game-view').classList.toggle('hidden', viewName !== 'game');
+        
+        document.getElementById('nav-leaderboard').disabled = (viewName === 'leaderboard');
+        document.getElementById('nav-game').disabled = (viewName === 'game');
+    }
 
     /** Menampilkan modal pesan kustom */
     function showModal(title, message, isNetworkError = false) {
@@ -335,28 +445,24 @@
         }
         
         try {
-            // Coba untuk mengganti (switch) ke Chain ID 5031
             await window.ethereum.request({
                 method: 'wallet_switchEthereumChain',
                 params: [{ chainId: '0x13a7' }],
             });
-            // Jika sukses, reload halaman untuk inisialisasi ulang Web3
             window.location.reload();
         } catch (switchError) {
-            // Jika 4902 (jaringan belum ada), coba tambahkan jaringan
             if (switchError.code === 4902) {
                 try {
                     await window.ethereum.request({
                         method: 'wallet_addEthereumChain',
                         params: REQUIRED_NETWORK_PARAMS,
                     });
-                    // Jika sukses, reload halaman
                     window.location.reload();
                 } catch (addError) {
-                    showModal("Gagal Menambahkan Jaringan", `Gagal menambahkan ${REQUIRED_NETWORK_NAME}. Silakan tambahkan secara manual. Pesan: ${addError.message || addError.code}`);
+                    showModal("Gagal Menambahkan Jaringan", `Gagal menambahkan ${REQUIRED_NETWORK_NAME}. Pesan: ${addError.message || addError.code}`);
                 }
             } else {
-                showModal("Gagal Beralih Jaringan", `Terjadi kesalahan saat beralih jaringan. Pastikan dompet Anda terbuka. Pesan: ${switchError.message || switchError.code}`);
+                showModal("Gagal Beralih Jaringan", `Terjadi kesalahan saat beralih jaringan. Pesan: ${switchError.message || switchError.code}`);
             }
         }
     }
@@ -364,22 +470,32 @@
 
     /** Memperbarui tampilan UI dompet */
     function updateWalletUI() {
-        const statusElement = document.getElementById('wallet-status');
-        const infoElement = document.getElementById('wallet-info');
+        const connectBtn = document.getElementById('connect-wallet-btn');
+        const walletDetails = document.getElementById('wallet-details');
         const addressElement = document.getElementById('connected-address');
         const balanceElement = document.getElementById('user-balance');
+        const startFeeDisplay = document.getElementById('start-fee-display');
         const startGameBtn = document.getElementById('start-game-btn');
+        const navGameBtn = document.getElementById('nav-game');
+
+        startFeeDisplay.textContent = ethers.utils.formatEther(startFeeWei);
 
         if (userAddress) {
-            statusElement.textContent = "Dompet Terhubung: " + userAddress.substring(0, 6) + "..." + userAddress.substring(userAddress.length - 4);
-            infoElement.classList.remove('hidden');
-            addressElement.textContent = userAddress;
+            // Tampilkan detail dompet, sembunyikan tombol koneksi
+            connectBtn.classList.add('hidden');
+            walletDetails.classList.remove('hidden');
+            
+            addressElement.textContent = userAddress.substring(0, 6) + "..." + userAddress.substring(userAddress.length - 4);
             balanceElement.textContent = `Saldo: ${userBalance} SOMI`;
             startGameBtn.disabled = false;
+            navGameBtn.disabled = false;
         } else {
-            statusElement.textContent = "Dompet Tidak Terhubung";
-            infoElement.classList.add('hidden');
+            // Tampilkan tombol koneksi, sembunyikan detail dompet
+            connectBtn.classList.remove('hidden');
+            document.getElementById('wallet-status').textContent = "Hubungkan Dompet";
+            walletDetails.classList.add('hidden');
             startGameBtn.disabled = true;
+            navGameBtn.disabled = true;
         }
     }
 
@@ -390,12 +506,14 @@
     /** Menginisialisasi koneksi Web3 (MetaMask/Provider) */
     async function initWeb3() {
         if (!window.ethereum) {
+            document.getElementById('wallet-status').textContent = "Instal MetaMask!";
             showModal("Kesalahan", "Silakan instal MetaMask atau dompet Web3 yang kompatibel.");
             return;
         }
         
         try {
-            // Meminta koneksi ke dompet
+            document.getElementById('wallet-status').textContent = "Menghubungkan...";
+            
             await window.ethereum.request({ method: 'eth_requestAccounts' });
             
             provider = new ethers.providers.Web3Provider(window.ethereum);
@@ -405,41 +523,44 @@
             // Periksa jaringan (Chain ID Wajib)
             const { chainId } = await provider.getNetwork();
             if (chainId !== REQUIRED_CHAIN_ID) {
-                // PESAN BARU: Memberi tahu pengguna jaringan mana yang dibutuhkan dan memberi opsi untuk beralih
                 showModal("Kesalahan Jaringan", 
-                    `Silakan pindah ke jaringan **${REQUIRED_NETWORK_NAME}** (Chain ID: ${REQUIRED_CHAIN_ID}) di dompet Anda.`,
+                    `Silakan pindah ke jaringan **${REQUIRED_NETWORK_NAME}** (Chain ID: ${REQUIRED_CHAIN_ID}).`,
                     true // isNetworkError = true
                 );
                 userAddress = null;
-                updateWalletUI();
+                updateWalletUI(); 
                 return;
             }
 
             // Inisialisasi Kontrak
             contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
             
-            // Ambil saldo
-            const balanceWei = await provider.getBalance(userAddress);
-            userBalance = ethers.utils.formatEther(balanceWei);
+            // Ambil saldo dan biaya
+            const [balanceWei, feeWei] = await Promise.all([
+                provider.getBalance(userAddress),
+                contract.startFeeWei()
+            ]);
             
-            // Ambil biaya mulai game
-            startFeeWei = await contract.startFeeWei();
+            userBalance = ethers.utils.formatEther(balanceWei);
+            startFeeWei = feeWei;
 
             updateWalletUI();
 
             // Dengarkan perubahan akun/jaringan
-            window.ethereum.on('accountsChanged', (accounts) => {
-                window.location.reload();
-            });
-            window.ethereum.on('chainChanged', (chainId) => {
-                window.location.reload();
-            });
+            window.ethereum.on('accountsChanged', () => window.location.reload());
+            window.ethereum.on('chainChanged', () => window.location.reload());
 
         } catch (error) {
             console.error("Kesalahan saat koneksi dompet:", error);
             userAddress = null;
             updateWalletUI();
-            showModal("Koneksi Gagal", `Terjadi kesalahan saat menghubungkan dompet: ${error.message || error.code}.`);
+            
+            let errorMessage = error.message || error.code;
+            if (error.code === 4001) {
+                errorMessage = "Anda menolak permintaan koneksi dompet.";
+            }
+
+            showModal("Koneksi Gagal", `Terjadi kesalahan saat menghubungkan dompet: ${errorMessage}.`);
         }
     }
 
@@ -463,55 +584,46 @@
         }
 
         try {
-            document.getElementById('start-game-btn').textContent = "Menunggu Konfirmasi...";
-            document.getElementById('start-game-btn').disabled = true;
+            const startBtn = document.getElementById('start-game-btn');
+            startBtn.textContent = "Menunggu Konfirmasi...";
+            startBtn.disabled = true;
 
             const tx = await contract.startGame(username, {
-                value: startFeeWei // Kirim biaya mulai game
+                value: startFeeWei 
             });
 
-            showModal("Transaksi Terkirim", `Transaksi memulai game telah dikirim. Harap tunggu konfirmasi di blockchain.`);
+            showModal("Transaksi Terkirim", `Transaksi memulai game telah dikirim. Harap tunggu konfirmasi.`);
             
             const receipt = await tx.wait();
             console.log("Transaksi startGame berhasil:", receipt);
 
-            // Cari event GameStarted untuk mendapatkan gameId
             const gameStartedEvent = receipt.events.find(e => e.event === 'GameStarted');
             if (gameStartedEvent) {
                 gameId = gameStartedEvent.args.gameId.toNumber();
-                console.log(`Game ID baru: ${gameId}`);
+                
                 showModal("Game Siap!", "Transaksi berhasil dikonfirmasi. Anda bisa mulai bermain sekarang!");
                 
-                // Mulai permainan setelah transaksi berhasil
-                document.getElementById('start-game-btn').textContent = "MULAI BERMAIN";
-                document.getElementById('start-game-btn').disabled = false;
+                startBtn.textContent = "ULANGI SESI";
+                startBtn.disabled = false;
                 
-                // Sembunyikan UI utama dan tampilkan game
-                document.querySelector('.container').style.display = 'none';
-                document.getElementById('game-container').style.display = 'block';
-                document.getElementById('game-user-id').textContent = firebaseUserId;
+                // Aktifkan dan pindah ke tampilan game
+                switchView('game');
 
-                // Reset dan mulai permainan Pac-Man (asumsi fungsi ada di bawah)
+                // Reset dan mulai permainan Pac-Man
                 resetGame();
                 startGameLoop();
 
             } else {
-                throw new Error("Event GameStarted tidak ditemukan dalam transaksi.");
+                throw new Error("Event GameStarted tidak ditemukan.");
             }
 
         } catch (error) {
             console.error("Transaksi startGame Gagal:", error);
-            document.getElementById('start-game-btn').textContent = "MULAI BERMAIN";
-            document.getElementById('start-game-btn').disabled = false;
+            const startBtn = document.getElementById('start-game-btn');
+            startBtn.textContent = "MULAI BERMAIN";
+            startBtn.disabled = false;
             
-            let errorMessage = "Gagal memulai game. Coba lagi.";
-            if (error.code === 4001) {
-                errorMessage = "Anda membatalkan transaksi di dompet.";
-            } else if (error.message.includes('bad address checksum')) {
-                errorMessage = `Kesalahan Alamat Kontrak: ${error.message}.`;
-            } else if (error.data && error.data.message) {
-                 errorMessage = `Kontrak Tolak: ${error.data.message}.`;
-            }
+            let errorMessage = error.code === 4001 ? "Anda membatalkan transaksi." : (error.data?.message || "Gagal memulai game.");
             showModal("Transaksi Gagal", `Pesan Kesalahan: ${errorMessage}`);
         }
     }
@@ -526,36 +638,27 @@
         const username = document.getElementById('display-name-input').value.trim() || 'AnonPlayer';
 
         try {
-            showModal("Mengirim Skor", "Skor Anda sedang dikirim ke blockchain. Harap tunggu konfirmasi.");
-            
-            // maxScorePerSubmit harus diperiksa di sini, tapi karena tidak diambil, kita berasumsi kontrak menanganinya
+            showModal("Mengirim Skor", `Skor ${finalScore} Anda sedang dikirim ke blockchain. Harap tunggu.`);
             
             const tx = await contract.submitScore(finalScore, gameId, username);
             
             const receipt = await tx.wait();
             console.log("Transaksi submitScore berhasil:", receipt);
 
-            // Cari event ScoreSubmitted untuk mendapatkan totalScore baru
             const scoreSubmittedEvent = receipt.events.find(e => e.event === 'ScoreSubmitted');
             let newTotalScore = finalScore;
             if (scoreSubmittedEvent) {
                 newTotalScore = scoreSubmittedEvent.args.totalScore.toNumber();
             }
 
-            // Setelah sukses di blockchain, simpan juga di Firestore (untuk kemudahan Leaderboard)
             await saveScoreToFirestore(newTotalScore, username);
             
-            showModal("Skor Berhasil Dikirim!", `Skor akhir Anda (${finalScore}) berhasil dicatat. Total Skor Akumulasi Anda: ${newTotalScore.toLocaleString()}.`);
+            showModal("Skor Berhasil Dikirim!", `Skor akhir (${finalScore}) berhasil dicatat! Total Skor Akumulasi Anda: ${newTotalScore.toLocaleString()}.`);
 
         } catch (error) {
             console.error("Transaksi submitScore Gagal:", error);
             
-            let errorMessage = "Gagal mengirim skor. Coba lagi.";
-            if (error.code === 4001) {
-                errorMessage = "Anda membatalkan transaksi di dompet.";
-            } else if (error.data && error.data.message) {
-                 errorMessage = `Kontrak Tolak: ${error.data.message}. Mungkin skor Anda tidak melebihi skor terakhir atau sudah mencapai batas maksimum.`;
-            }
+            let errorMessage = error.code === 4001 ? "Anda membatalkan pengiriman skor." : (error.data?.message || "Gagal mengirim skor.");
             showModal("Pengiriman Skor Gagal", `Pesan Kesalahan: ${errorMessage}`);
         }
     }
@@ -572,17 +675,12 @@
         appId = window.firebaseData.getAppId();
         document.getElementById('user-firebase-id').textContent = firebaseUserId;
         loadLeaderboard();
-        loadUserScore();
     };
 
     /** Memuat 10 Peringkat Teratas */
     function loadLeaderboard() {
-        if (!db || !appId) {
-            console.error("Firestore belum siap untuk memuat leaderboard.");
-            return;
-        }
+        if (!db || !appId) return;
         
-        // Path koleksi publik untuk leaderboard global: /artifacts/{appId}/public/data/leaderboard
         const q = query(
             collection(db, "artifacts", appId, "public", "data", LEADERBOARD_COLLECTION),
             orderBy("totalScore", "desc"),
@@ -594,45 +692,26 @@
             leaderboardList.innerHTML = '';
             
             if (snapshot.empty) {
-                leaderboardList.innerHTML = '<div class="text-center text-gray-300 p-4">Belum ada skor yang dicatat.</div>';
+                leaderboardList.innerHTML = '<div class="text-center text-gray-300 p-4">Belum ada skor.</div>';
                 return;
             }
 
             snapshot.forEach((doc, index) => {
                 const data = doc.data();
                 const scoreItem = document.createElement('div');
-                scoreItem.className = 'leaderboard-item';
+                const isCurrentUser = data.userId === firebaseUserId;
+                scoreItem.className = 'leaderboard-item ' + (isCurrentUser ? 'bg-red-700 hover:bg-red-800' : 'bg-[#2c4766] hover:bg-[#3d5a7d]');
                 scoreItem.innerHTML = `
                     <span class="font-bold text-xl text-[#facc15]">${index + 1}.</span>
                     <span class="flex-grow mx-4 text-left">${data.username || 'Pemain Anon'} <span class="text-xs text-gray-400">(${data.userId.substring(0, 4)}...)</span></span>
                     <span class="font-bold text-lg text-white">${data.totalScore.toLocaleString()}</span>
                 `;
-                if (data.userId === firebaseUserId) {
-                     scoreItem.style.backgroundColor = '#cc0000'; // Highlight skor pengguna
-                }
                 leaderboardList.appendChild(scoreItem);
             });
         }, (error) => {
              console.error("Gagal memuat leaderboard dari Firestore:", error);
              document.getElementById('leaderboard-list').innerHTML = '<div class="text-center text-red-400 p-4">Gagal memuat Leaderboard.</div>';
         });
-    }
-
-    /** Memuat skor akumulasi pengguna saat ini */
-    async function loadUserScore() {
-         if (!db || !appId || !firebaseUserId) return;
-         
-         const docRef = doc(db, "artifacts", appId, "public", "data", LEADERBOARD_COLLECTION, firebaseUserId);
-         
-         // Ambil skor sekali saat memuat
-         const docSnap = await getDoc(docRef);
-         if (docSnap.exists()) {
-             const data = docSnap.data();
-             const totalScoreDisplay = document.getElementById('user-total-score');
-             if (totalScoreDisplay) {
-                 totalScoreDisplay.textContent = data.totalScore.toLocaleString();
-             }
-         }
     }
 
     /** Menyimpan skor akumulasi total ke Firestore (dipanggil SETELAH sukses di blockchain) */
@@ -643,7 +722,6 @@
         }
 
         try {
-            // Path dokumen publik: /artifacts/{appId}/public/data/leaderboard/{userId}
             const docRef = doc(db, "artifacts", appId, "public", "data", LEADERBOARD_COLLECTION, firebaseUserId);
 
             await setDoc(docRef, {
@@ -651,9 +729,7 @@
                 username: username,
                 totalScore: newTotalScore,
                 lastUpdated: new Date().toISOString()
-            }, { merge: true }); // Gunakan merge untuk menjaga field lain
-
-            console.log("Skor akumulasi disimpan ke Firestore:", newTotalScore);
+            }, { merge: true }); 
 
         } catch (error) {
             console.error("Gagal menyimpan skor ke Firestore:", error);
@@ -667,6 +743,7 @@
     const canvas = document.getElementById('pacman-canvas');
     const ctx = canvas.getContext('2d');
     const TILE_SIZE = 20;
+    // Map yang sama
     const GAME_MAP = [
         [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
         [1,2,2,2,2,2,2,2,2,1,1,2,2,2,2,2,2,2,2,1],
@@ -689,14 +766,16 @@
     ];
     const MAP_WIDTH = GAME_MAP[0].length;
     const MAP_HEIGHT = GAME_MAP.length;
+    
+    // Set ukuran Kanvas
     canvas.width = MAP_WIDTH * TILE_SIZE;
     canvas.height = MAP_HEIGHT * TILE_SIZE;
 
     // Game state
     let pacman = { x: 1, y: 1, dir: 'right', nextDir: 'right', radius: TILE_SIZE / 2.5 };
     let ghosts = [
-        { x: 9, y: 9, color: '#cc0000', dir: 'up', speed: 1 }, // Grinch Red
-        { x: 10, y: 9, color: '#16a34a', dir: 'down', speed: 1 }, // Santa Green
+        { x: 9, y: 9, color: '#cc0000', dir: 'up', speed: 1 }, 
+        { x: 10, y: 9, color: '#16a34a', dir: 'down', speed: 1 }, 
     ];
     let score = 0;
     let gameRunning = false;
@@ -708,8 +787,8 @@
         score = 0;
         pacman = { x: 1, y: 1, dir: 'right', nextDir: 'right', radius: TILE_SIZE / 2.5 };
         ghosts = [
-            { x: 9, y: 9, color: '#cc0000', dir: 'up', speed: 1 }, // Grinch Red
-            { x: 10, y: 9, color: '#16a34a', dir: 'down', speed: 1 }, // Santa Green
+            { x: 9, y: 9, color: '#cc0000', dir: 'up', speed: 1 }, 
+            { x: 10, y: 9, color: '#16a34a', dir: 'down', speed: 1 }, 
         ];
     }
 
@@ -725,22 +804,21 @@
             for (let x = 0; x < MAP_WIDTH; x++) {
                 const type = mapData[y][x];
                 
-                if (type === 1) { // Wall
-                    ctx.fillStyle = '#cc0000'; // Red Wall
+                if (type === 1) { // Tembok (Wall)
+                    ctx.fillStyle = '#cc0000'; // Merah
                     ctx.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-                    ctx.strokeStyle = '#ffffff'; // White Stripe
+                    ctx.strokeStyle = '#ffffff'; // Putih
                     ctx.lineWidth = 2;
-                    // Draw vertical stripe
                     ctx.beginPath();
                     ctx.moveTo(x * TILE_SIZE + TILE_SIZE / 2, y * TILE_SIZE);
                     ctx.lineTo(x * TILE_SIZE + TILE_SIZE / 2, y * TILE_SIZE + TILE_SIZE);
                     ctx.stroke();
                 } else {
-                    ctx.fillStyle = '#1a2c42'; // Dark Blue path
+                    ctx.fillStyle = '#1a2c42'; // Jalur
                     ctx.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
 
-                    if (type === 2) { // Dot (Pellet)
-                        ctx.fillStyle = '#facc15'; // Gold
+                    if (type === 2) { // Pellet
+                        ctx.fillStyle = '#facc15'; // Emas
                         ctx.beginPath();
                         ctx.arc(x * TILE_SIZE + TILE_SIZE / 2, y * TILE_SIZE + TILE_SIZE / 2, TILE_SIZE / 8, 0, Math.PI * 2);
                         ctx.fill();
@@ -753,10 +831,9 @@
     function drawPacman() {
         const x = pacman.x * TILE_SIZE + TILE_SIZE / 2;
         const y = pacman.y * TILE_SIZE + TILE_SIZE / 2;
-        ctx.fillStyle = '#facc15'; // Yellow
+        ctx.fillStyle = '#facc15'; // Kuning
         ctx.beginPath();
         
-        // Mulut Pacman (Animasi sederhana)
         const mouthOpen = Math.abs(Math.sin(Date.now() / 100));
         const angleOffset = { 'right': 0, 'left': Math.PI, 'up': -Math.PI / 2, 'down': Math.PI / 2 }[pacman.dir];
         const startAngle = angleOffset + mouthOpen * 0.4;
@@ -775,10 +852,10 @@
             
             ctx.fillStyle = ghost.color;
             ctx.beginPath();
-            // Body
+            // Badan
             ctx.arc(x, y, TILE_SIZE / 2, Math.PI, 0, false);
             ctx.rect(x - TILE_SIZE / 2, y, TILE_SIZE, TILE_SIZE / 2);
-            // Skirt (Simple wobble)
+            // Kaki (Skirt)
             const wobble = Math.sin(Date.now() / 200) * 2;
             ctx.moveTo(x - TILE_SIZE / 2, y + TILE_SIZE / 2);
             ctx.lineTo(x - TILE_SIZE / 2 + TILE_SIZE / 4 + wobble, y + TILE_SIZE / 2 - 3);
@@ -788,14 +865,14 @@
             
             ctx.fill();
             
-            // Eyes
+            // Mata
             ctx.fillStyle = 'white';
             ctx.beginPath();
             ctx.arc(x - TILE_SIZE / 4, y - TILE_SIZE / 4, TILE_SIZE / 8, 0, Math.PI * 2);
             ctx.arc(x + TILE_SIZE / 4, y - TILE_SIZE / 4, TILE_SIZE / 8, 0, Math.PI * 2);
             ctx.fill();
             
-            // Pupils
+            // Pupil
             ctx.fillStyle = 'black';
             ctx.beginPath();
             ctx.arc(x - TILE_SIZE / 4 + 1, y - TILE_SIZE / 4, TILE_SIZE / 16, 0, Math.PI * 2);
@@ -808,13 +885,11 @@
         const nextX = pacman.x + (pacman.nextDir === 'right' ? 1 : pacman.nextDir === 'left' ? -1 : 0);
         const nextY = pacman.y + (pacman.nextDir === 'down' ? 1 : pacman.nextDir === 'up' ? -1 : 0);
 
-        // Cek arah selanjutnya
         if (mapData[nextY] && mapData[nextY][nextX] !== 1) {
             pacman.dir = pacman.nextDir;
             pacman.x = nextX;
             pacman.y = nextY;
         } else {
-            // Cek arah saat ini
             const currentX = pacman.x + (pacman.dir === 'right' ? 1 : pacman.dir === 'left' ? -1 : 0);
             const currentY = pacman.y + (pacman.dir === 'down' ? 1 : pacman.dir === 'up' ? -1 : 0);
 
@@ -843,15 +918,12 @@
                 const nextX = ghost.x + move.dx;
                 const nextY = ghost.y + move.dy;
                 
-                // Pastikan gerakan tidak menabrak tembok (1) dan bukan arah balik 180 derajat
                 if (mapData[nextY] && mapData[nextY][nextX] !== 1) {
-                    // Tambahkan semua arah yang valid
                     possibleMoves.push(move);
                 }
             });
 
             if (possibleMoves.length > 0) {
-                // Sederhana: pilih gerakan acak dari yang valid
                 const move = possibleMoves[Math.floor(Math.random() * possibleMoves.length)];
                 ghost.x += move.dx;
                 ghost.y += move.dy;
@@ -863,26 +935,25 @@
     function checkCollision() {
         // Cek dot
         if (mapData[pacman.y][pacman.x] === 2) {
-            mapData[pacman.y][pacman.x] = 0; // Hilangkan dot
+            mapData[pacman.y][pacman.x] = 0; 
             score += 10;
             document.getElementById('current-score-display').textContent = score;
 
-            // Cek apakah semua dot sudah dikumpulkan
             let dotsRemaining = mapData.flat().filter(cell => cell === 2).length;
             if (dotsRemaining === 0) {
-                endGame("SELAMAT! LEVEL SELESAI!");
+                endGame("SELAMAT! LEVEL SELESAI!", true);
             }
         }
 
         // Cek hantu
         ghosts.forEach(ghost => {
             if (pacman.x === ghost.x && pacman.y === ghost.y) {
-                endGame("Misi Gagal! Anda tertangkap!");
+                endGame("Misi Gagal! Anda tertangkap!", false);
             }
         });
     }
 
-    function endGame(message) {
+    function endGame(message, isWin) {
         if (!gameRunning) return;
         gameRunning = false;
         cancelAnimationFrame(animationFrameId);
@@ -890,26 +961,21 @@
         document.getElementById('game-message').textContent = message;
         document.getElementById('game-message').style.display = 'block';
         
-        // Panggil pengiriman skor (hanya jika berhasil diselesaikan atau ada skor)
-        if (score > 0) {
+        // Kirim skor jika skor > 0 atau jika menang
+        if (score > 0 || isWin) {
             submitScoreTx(score);
-        } else if (message.includes("SELAMAT")) {
-            // Jika menang tapi skor 0 (kasus langka), kirim 1 sebagai tanda kemenangan
-            submitScoreTx(1);
         }
 
-        // Setelah game selesai, tampilkan lagi UI utama
+        // Kembali ke tampilan leaderboard setelah 5 detik
         setTimeout(() => {
-            document.getElementById('game-container').style.display = 'none';
-            document.querySelector('.container').style.display = 'block';
-            resetGame(); // Reset untuk sesi berikutnya
+            document.getElementById('game-message').style.display = 'none';
+            switchView('leaderboard');
         }, 5000);
     }
 
     let lastTime = 0;
-    const FRAME_RATE = 1000 / 60; // 60 FPS
+    const GAME_UPDATE_INTERVAL = 150; 
     let gameUpdateTimer = 0;
-    const GAME_UPDATE_INTERVAL = 150; // Update game state setiap 150ms
 
     function gameLoop(timestamp) {
         if (!gameRunning) return;
@@ -925,7 +991,7 @@
         gameUpdateTimer += deltaTime;
         if (gameUpdateTimer > GAME_UPDATE_INTERVAL) {
             movePacman();
-            moveGhosts(); // Hantu bergerak lebih lambat
+            moveGhosts(); 
             checkCollision();
             gameUpdateTimer = 0;
         }
@@ -954,7 +1020,7 @@
         if (!gameRunning) return;
         const key = e.key.toLowerCase();
         if (['w', 'a', 's', 'd', 'arrowup', 'arrowleft', 'arrowdown', 'arrowright'].includes(key)) {
-            e.preventDefault(); // Mencegah scrolling
+            e.preventDefault(); 
             pacman.nextDir = 
                 key === 'w' || key === 'arrowup' ? 'up' :
                 key === 's' || key === 'arrowdown' ? 'down' :
@@ -979,7 +1045,8 @@
     // Inisialisasi awal saat halaman dimuat
     window.onload = function() {
         initWeb3();
-        resetGame(); // Reset game map, tapi tidak memulai loop
+        resetGame(); // Reset game map
+        switchView('leaderboard'); // Tampilkan leaderboard secara default
     };
 
 </script>
