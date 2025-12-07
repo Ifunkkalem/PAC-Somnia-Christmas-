@@ -1,6 +1,6 @@
 <!--
   PAC-MAN WEB3: Sinterklas VS Grinch
-  Tata Letak Profesional: Dashboard Dua Bilah, Fully Responsive.
+  Tata Letak Profesional V2: Fully Responsive, Web3 Fixes Applied.
 -->
 <!DOCTYPE html>
 <html lang="id">
@@ -199,6 +199,16 @@
             transform: translateY(-2px);
             box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5);
         }
+
+        /* Modal Styling */
+        .modal {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+            background: rgba(0, 0, 0, 0.8); display: flex; justify-content: center; align-items: center; z-index: 100;
+        }
+        .modal-content {
+            background: #112033; padding: 30px; border-radius: 12px; max-width: 90%; width: 400px; 
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+        }
     </style>
 </head>
 <body>
@@ -326,13 +336,13 @@
     // 1. KONFIGURASI WEB3 & FIREBASE
     // ====================================================================
 
-    // Alamat Kontrak pintar PacmanLeaderboard di Somnia Mainnet (EIP-55 Checksum)
-    const CONTRACT_ADDRESS = "0xD76b767102F2610b0c97Fee84873C1fAA4C7c365";
-    // Chain ID yang BENAR: 5031 (0x13a7 dalam Hex)
+    // ALAMAT KONTRAK YANG DIKOREKSI MENGGUNAKAN CHECKSUM EIP-55
+    const CONTRACT_ADDRESS = "0xD76B767102f2610B0C97FEe84873C1fAA4C7C365"; 
+    // Chain ID yang BENAR: 5031
     const REQUIRED_CHAIN_ID = 5031; 
     const REQUIRED_NETWORK_NAME = "Somnia Mainnet";
     const REQUIRED_NETWORK_PARAMS = [{
-        chainId: '0x13a7', 
+        chainId: '0x13a7', // 5031 dalam Hex
         chainName: REQUIRED_NETWORK_NAME,
         nativeCurrency: {
             name: 'SOMI',
@@ -359,7 +369,11 @@
     let userAddress = null;
     let userBalance = "0";
     let gameId = 0; 
-    let startFeeWei = ethers.BigNumber.from(0);
+    let startFeeWei = ethers.BigNumber.from(0); // Akan diisi dari kontrak
+    
+    // Nilai 0.01 SOMI dalam Wei (Sebagai referensi, walau kita ambil dari kontrak)
+    const START_FEE_REFERENCE = ethers.utils.parseEther("0.01");
+
 
     // Status Firebase
     let db = null;
@@ -375,11 +389,10 @@
 
     /** Mengganti tampilan konten utama */
     function switchView(viewName) {
-        if (viewName === 'game' && !gameRunning) {
+        if (viewName === 'game' && !document.getElementById('start-game-btn').disabled) {
              // Izinkan pengguna melihat tampilan game, tetapi ingatkan untuk memulai
-             if (document.getElementById('start-game-btn').disabled) {
-                showModal("Peringatan", "Anda harus berhasil terhubung ke dompet dan siap untuk bermain.");
-                return;
+             if (!gameRunning) {
+                // Biarkan mereka melihatnya, tapi game belum jalan
              }
         }
 
@@ -457,10 +470,11 @@
         const startGameBtn = document.getElementById('start-game-btn');
         const navGameBtn = document.getElementById('nav-game');
 
+        // Gunakan nilai startFeeWei yang diambil dari kontrak (seharusnya 0.01 SOMI)
         document.getElementById('start-fee-display').textContent = ethers.utils.formatEther(startFeeWei);
 
-        if (userAddress && provider && startFeeWei) {
-            // Sukses Terkoneksi
+        if (userAddress && provider && contract) { // Kontrak hanya ada jika Jaringan Benar
+            // Sukses Terkoneksi ke Jaringan Somnia
             connectBtn.classList.add('hidden');
             walletDetails.classList.remove('hidden');
             startGameBtn.disabled = false;
@@ -474,7 +488,7 @@
             networkStatus.classList.add('text-green-400');
 
         } else if (provider) {
-             // Dompet Terhubung, tapi ada masalah (biasanya Jaringan salah)
+             // Dompet Terhubung, tapi Jaringan salah (kontrak belum diinisialisasi)
             connectBtn.classList.remove('hidden');
             document.getElementById('wallet-status').textContent = "Jaringan Salah, Klik untuk Perbaiki";
             walletDetails.classList.add('hidden');
@@ -500,7 +514,7 @@
     }
 
     // ====================================================================
-    // 3. FUNGSI WEB3 (PERBAIKAN ERROR HANDLING)
+    // 3. FUNGSI WEB3 (APLIKASI FIX CHECK SUM DAN VALUE)
     // ====================================================================
 
     /** Menginisialisasi koneksi Web3 (MetaMask/Provider) */
@@ -529,7 +543,7 @@
 
             if (initialChainId !== REQUIRED_CHAIN_ID) {
                 // JARINGAN SALAH: Arahkan pengguna ke modal dan batalkan inisialisasi kontrak
-                userAddress = null; // Reset alamat karena jaringan salah
+                contract = null;
                 updateWalletUI(); 
 
                 showModal("Kesalahan Jaringan", 
@@ -540,6 +554,7 @@
             }
 
             // 3. JARINGAN BENAR: Lanjutkan inisialisasi
+            // PENTING: Alamat kontrak yang dikoreksi (Checksum) digunakan di sini
             contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
             
             // Ambil saldo dan biaya
@@ -563,6 +578,7 @@
             // Pastikan state selalu bersih pada kegagalan
             userAddress = null;
             provider = null;
+            contract = null;
             updateWalletUI();
             
             let errorMessage = error.message || error.code;
@@ -574,10 +590,10 @@
         }
     }
 
-    /** Memulai sesi game melalui kontrak pintar */
+    /** Memulai sesi game melalui kontrak pintar, mengirim 0.01 SOMI */
     async function startGameTx() {
-        if (!contract || !userAddress) {
-            showModal("Peringatan", "Dompet belum terhubung atau jaringan salah.");
+        if (!contract || !userAddress || startFeeWei.isZero()) {
+            showModal("Peringatan", "Dompet belum terhubung, jaringan salah, atau biaya belum dimuat.");
             return;
         }
 
@@ -588,21 +604,23 @@
         }
         
         // Cek saldo
-        if (ethers.utils.parseEther(userBalance).lt(startFeeWei)) {
-            showModal("Saldo Kurang", `Anda membutuhkan ${ethers.utils.formatEther(startFeeWei)} SOMI untuk memulai game.`);
+        const currentBalanceWei = ethers.utils.parseEther(userBalance);
+        if (currentBalanceWei.lt(startFeeWei)) {
+            showModal("Saldo Kurang", `Anda membutuhkan ${ethers.utils.formatEther(startFeeWei)} SOMI (0.01 SOMI) untuk memulai game.`);
             return;
         }
 
         try {
             const startBtn = document.getElementById('start-game-btn');
-            startBtn.textContent = "Menunggu Konfirmasi...";
+            startBtn.textContent = "Menunggu Konfirmasi Transaksi...";
             startBtn.disabled = true;
 
+            // FIX UTAMA: Memastikan nilai (value) dikirim bersama transaksi
             const tx = await contract.startGame(username, {
-                value: startFeeWei 
+                value: startFeeWei // Ini mengirimkan 0.01 SOMI
             });
 
-            showModal("Transaksi Terkirim", `Transaksi memulai game telah dikirim. Harap tunggu konfirmasi...`);
+            showModal("Transaksi Terkirim", `Transaksi memulai game telah dikirim (${tx.hash}). Harap tunggu konfirmasi...`);
             
             const receipt = await tx.wait();
             
@@ -610,7 +628,7 @@
             if (gameStartedEvent) {
                 gameId = gameStartedEvent.args.gameId.toNumber();
                 
-                showModal("Game Siap!", "Transaksi berhasil dikonfirmasi. Anda bisa mulai bermain sekarang!");
+                showModal("Game Siap!", `Transaksi berhasil dikonfirmasi. Game ID: ${gameId}. Anda bisa mulai bermain sekarang!`);
                 
                 startBtn.textContent = "MULAI SESI BARU";
                 startBtn.disabled = false;
@@ -657,12 +675,14 @@
             const scoreSubmittedEvent = receipt.events.find(e => e.event === 'ScoreSubmitted');
             let newTotalScore = finalScore;
             if (scoreSubmittedEvent) {
-                newTotalScore = scoreSubmittedEvent.args.totalScore.toNumber();
+                // Ambil total skor dari event untuk sinkronisasi Firetore
+                newTotalScore = scoreSubmittedEvent.args.totalScore.toNumber(); 
             }
 
+            // Simpan ke Firestore
             await saveScoreToFirestore(newTotalScore, username);
             
-            showModal("Skor Berhasil Dikirim!", `Skor akhir (${finalScore}) berhasil dicatat! Total Skor Akumulasi Anda: ${newTotalScore.toLocaleString()}.`);
+            showModal("Skor Berhasil Dikirim!", `Skor akhir (${finalScore}) berhasil dicatat di blockchain! Total Skor Akumulasi Anda: ${newTotalScore.toLocaleString()}.`);
 
         } catch (error) {
             console.error("Transaksi submitScore Gagal:", error);
@@ -708,7 +728,8 @@
             snapshot.forEach((doc, index) => {
                 const data = doc.data();
                 const scoreItem = document.createElement('div');
-                const isCurrentUser = data.userId === firebaseUserId;
+                // Menggunakan firebaseUserId untuk menandai pengguna saat ini
+                const isCurrentUser = data.userId === firebaseUserId; 
                 scoreItem.className = 'leaderboard-item flex justify-between items-center p-3 rounded-xl shadow-md transition-all ' + (isCurrentUser ? 'current-user' : '');
                 
                 scoreItem.innerHTML = `
@@ -975,6 +996,9 @@
         // Kirim skor jika skor > 0 atau jika menang
         if (score > 0 || isWin) {
             submitScoreTx(score);
+        } else {
+             // Jika skor 0, hanya tampilkan pesan akhir game
+             showModal("Game Berakhir", message + " Skor Anda: 0. Skor tidak dikirim ke leaderboard.");
         }
 
         // Kembali ke tampilan leaderboard setelah 5 detik
