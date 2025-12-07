@@ -73,7 +73,7 @@
     <!-- Ethers.js for Web3 interaction -->
     <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.0/dist/ethers.umd.min.js"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
         body {
             font-family: 'Inter', sans-serif;
             background-color: #0b1a2a; /* Dark Blue Christmas Theme */
@@ -119,14 +119,22 @@
             box-shadow: none;
             transform: translateY(4px);
         }
-        .btn-blue {
-            background-color: #2563eb;
+        .btn-red {
+            background-color: #cc0000;
             color: white;
             padding: 12px 20px;
             border-radius: 12px;
             font-weight: bold;
-            box-shadow: 0 4px #1d4ed8;
-            cursor: default;
+            transition: background-color 0.2s;
+            cursor: pointer;
+            box-shadow: 0 4px #990000;
+        }
+        .btn-red:hover {
+            background-color: #990000;
+        }
+        .btn-red:active {
+            box-shadow: none;
+            transform: translateY(4px);
         }
         .leaderboard-item {
             display: flex;
@@ -244,7 +252,10 @@
         <div class="modal-content">
             <h3 id="modal-title" class="text-2xl font-bold mb-4 text-[#facc15]">Pesan</h3>
             <p id="modal-message" class="mb-6 text-gray-200"></p>
-            <button id="modal-close-btn" class="btn-green">Tutup</button>
+            <div class="flex flex-col space-y-3">
+                <button id="modal-network-btn" class="btn-red hidden">Pindah ke Somnia Mainnet (5031)</button>
+                <button id="modal-close-btn" class="btn-green">Tutup</button>
+            </div>
         </div>
     </div>
 
@@ -253,13 +264,26 @@
     // 1. KONFIGURASI WEB3 & FIREBASE
     // ====================================================================
 
-    // PERBAIKAN PENTING: Mengganti alamat kontrak dengan canonical EIP-55 checksum yang benar
-    // untuk mengatasi Error: bad address checksum.
+    // Alamat Kontrak pintar PacmanLeaderboard di Somnia Mainnet (EIP-55 Checksum)
     const CONTRACT_ADDRESS = "0xD76b767102F2610b0c97Fee84873C1fAA4C7c365";
+    // Chain ID yang BENAR berdasarkan masukan dan gambar pengguna: 5031
+    const REQUIRED_CHAIN_ID = 5031; 
+    const REQUIRED_NETWORK_NAME = "Somnia Mainnet";
+    const REQUIRED_NETWORK_PARAMS = [{
+        chainId: '0x13a7', // 5031 dalam Hex
+        chainName: REQUIRED_NETWORK_NAME,
+        nativeCurrency: {
+            name: 'SOMI',
+            symbol: 'SOMI',
+            decimals: 18
+        },
+        rpcUrls: ['https://somnia-rpc.publicnode.com'], // Menggunakan RPC yang latensinya bagus dari gambar
+        blockExplorerUrls: ['https://explorer.somnia.network']
+    }];
     
     // ABI (Application Binary Interface) yang disederhanakan
     const CONTRACT_ABI = [
-        "function startGame(string memory _username) public returns (uint256)",
+        "function startGame(string memory _username) public payable returns (uint256)",
         "function submitScore(uint256 _score, uint256 _gameId, string memory _username) public",
         "function startFeeWei() view returns (uint256)",
         "function maxScorePerSubmit() view returns (uint256)",
@@ -288,14 +312,55 @@
     // ====================================================================
 
     /** Menampilkan modal pesan kustom */
-    function showModal(title, message) {
+    function showModal(title, message, isNetworkError = false) {
         document.getElementById('modal-title').textContent = title;
         document.getElementById('modal-message').innerHTML = message;
+        document.getElementById('modal-network-btn').classList.toggle('hidden', !isNetworkError);
         document.getElementById('custom-modal').classList.remove('hidden');
+        
         document.getElementById('modal-close-btn').onclick = () => {
             document.getElementById('custom-modal').classList.add('hidden');
         };
+        
+        if (isNetworkError) {
+             document.getElementById('modal-network-btn').onclick = addSomniaNetwork;
+        }
     }
+    
+    /** Mencoba menambahkan atau beralih ke Somnia Mainnet melalui dompet */
+    async function addSomniaNetwork() {
+        if (!window.ethereum) {
+            showModal("Kesalahan", "Anda perlu dompet Web3 (seperti MetaMask) untuk menggunakan fitur ini.");
+            return;
+        }
+        
+        try {
+            // Coba untuk mengganti (switch) ke Chain ID 5031
+            await window.ethereum.request({
+                method: 'wallet_switchEthereumChain',
+                params: [{ chainId: '0x13a7' }],
+            });
+            // Jika sukses, reload halaman untuk inisialisasi ulang Web3
+            window.location.reload();
+        } catch (switchError) {
+            // Jika 4902 (jaringan belum ada), coba tambahkan jaringan
+            if (switchError.code === 4902) {
+                try {
+                    await window.ethereum.request({
+                        method: 'wallet_addEthereumChain',
+                        params: REQUIRED_NETWORK_PARAMS,
+                    });
+                    // Jika sukses, reload halaman
+                    window.location.reload();
+                } catch (addError) {
+                    showModal("Gagal Menambahkan Jaringan", `Gagal menambahkan ${REQUIRED_NETWORK_NAME}. Silakan tambahkan secara manual. Pesan: ${addError.message || addError.code}`);
+                }
+            } else {
+                showModal("Gagal Beralih Jaringan", `Terjadi kesalahan saat beralih jaringan. Pastikan dompet Anda terbuka. Pesan: ${switchError.message || switchError.code}`);
+            }
+        }
+    }
+
 
     /** Memperbarui tampilan UI dompet */
     function updateWalletUI() {
@@ -337,10 +402,14 @@
             signer = provider.getSigner();
             userAddress = await signer.getAddress();
             
-            // Periksa jaringan (Somnia Mainnet) - ID 70700
+            // Periksa jaringan (Chain ID Wajib)
             const { chainId } = await provider.getNetwork();
-            if (chainId !== 70700) {
-                showModal("Kesalahan Jaringan", "Silakan pindah ke **Somnia Mainnet (Chain ID 70700)** di dompet Anda.");
+            if (chainId !== REQUIRED_CHAIN_ID) {
+                // PESAN BARU: Memberi tahu pengguna jaringan mana yang dibutuhkan dan memberi opsi untuk beralih
+                showModal("Kesalahan Jaringan", 
+                    `Silakan pindah ke jaringan **${REQUIRED_NETWORK_NAME}** (Chain ID: ${REQUIRED_CHAIN_ID}) di dompet Anda.`,
+                    true // isNetworkError = true
+                );
                 userAddress = null;
                 updateWalletUI();
                 return;
@@ -439,7 +508,6 @@
             if (error.code === 4001) {
                 errorMessage = "Anda membatalkan transaksi di dompet.";
             } else if (error.message.includes('bad address checksum')) {
-                // Walaupun sudah diperbaiki, berikan pesan spesifik jika error terulang
                 errorMessage = `Kesalahan Alamat Kontrak: ${error.message}.`;
             } else if (error.data && error.data.message) {
                  errorMessage = `Kontrak Tolak: ${error.data.message}.`;
@@ -460,6 +528,8 @@
         try {
             showModal("Mengirim Skor", "Skor Anda sedang dikirim ke blockchain. Harap tunggu konfirmasi.");
             
+            // maxScorePerSubmit harus diperiksa di sini, tapi karena tidak diambil, kita berasumsi kontrak menanganinya
+            
             const tx = await contract.submitScore(finalScore, gameId, username);
             
             const receipt = await tx.wait();
@@ -475,7 +545,7 @@
             // Setelah sukses di blockchain, simpan juga di Firestore (untuk kemudahan Leaderboard)
             await saveScoreToFirestore(newTotalScore, username);
             
-            showModal("Skor Berhasil Dikirim!", `Skor akhir Anda (${finalScore}) berhasil dicatat. Total Skor Akumulasi Anda: ${newTotalScore}.`);
+            showModal("Skor Berhasil Dikirim!", `Skor akhir Anda (${finalScore}) berhasil dicatat. Total Skor Akumulasi Anda: ${newTotalScore.toLocaleString()}.`);
 
         } catch (error) {
             console.error("Transaksi submitScore Gagal:", error);
@@ -625,8 +695,8 @@
     // Game state
     let pacman = { x: 1, y: 1, dir: 'right', nextDir: 'right', radius: TILE_SIZE / 2.5 };
     let ghosts = [
-        { x: 9, y: 9, color: 'blue', dir: 'up', speed: 1 },
-        { x: 10, y: 9, color: 'red', dir: 'down', speed: 1 },
+        { x: 9, y: 9, color: '#cc0000', dir: 'up', speed: 1 }, // Grinch Red
+        { x: 10, y: 9, color: '#16a34a', dir: 'down', speed: 1 }, // Santa Green
     ];
     let score = 0;
     let gameRunning = false;
@@ -654,13 +724,17 @@
         for (let y = 0; y < MAP_HEIGHT; y++) {
             for (let x = 0; x < MAP_WIDTH; x++) {
                 const type = mapData[y][x];
-                ctx.fillStyle = (x + y) % 2 === 0 ? '#cc0000' : '#ffffff'; // Striped Christmas Walls
                 
                 if (type === 1) { // Wall
+                    ctx.fillStyle = '#cc0000'; // Red Wall
                     ctx.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-                    ctx.strokeStyle = '#800000';
-                    ctx.lineWidth = 1;
-                    ctx.strokeRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+                    ctx.strokeStyle = '#ffffff'; // White Stripe
+                    ctx.lineWidth = 2;
+                    // Draw vertical stripe
+                    ctx.beginPath();
+                    ctx.moveTo(x * TILE_SIZE + TILE_SIZE / 2, y * TILE_SIZE);
+                    ctx.lineTo(x * TILE_SIZE + TILE_SIZE / 2, y * TILE_SIZE + TILE_SIZE);
+                    ctx.stroke();
                 } else {
                     ctx.fillStyle = '#1a2c42'; // Dark Blue path
                     ctx.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
