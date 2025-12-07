@@ -519,39 +519,70 @@
 
     /** Menginisialisasi koneksi Web3 (MetaMask/Provider) */
     async function initWeb3() {
-        if (!window.ethereum) {
-            document.getElementById('network-status').textContent = "Web3 Wallet Tidak Ditemukan!";
-            showModal("Kesalahan", "Silakan instal MetaMask atau dompet Web3 yang kompatibel.");
+    if (!window.ethereum) {
+        showModal("Kesalahan", "MetaMask / Wallet tidak ditemukan.");
+        return;
+    }
+
+    try {
+        document.getElementById('wallet-status').textContent = "Menghubungkan...";
+
+        const accounts = await window.ethereum.request({
+            method: 'eth_requestAccounts'
+        });
+
+        provider = new ethers.providers.Web3Provider(window.ethereum);
+        signer   = provider.getSigner();
+        userAddress = accounts[0];
+
+        const network = await provider.getNetwork();
+
+        if (network.chainId !== REQUIRED_CHAIN_ID) {
+            provider = null;
+            signer   = null;
+            contract = null;
+
+            updateWalletUI();
+
+            showModal(
+                "Jaringan Salah",
+                `Silakan pindah ke <b>${REQUIRED_NETWORK_NAME}</b> (5031)`,
+                true
+            );
             return;
         }
-        
-        let initialChainId = null;
 
-        try {
-            document.getElementById('wallet-status').textContent = "Menunggu Dompet...";
-            
-            // 1. Minta koneksi akun
-            await window.ethereum.request({ method: 'eth_requestAccounts' });
-            
-            provider = new ethers.providers.Web3Provider(window.ethereum);
-            signer = provider.getSigner();
-            userAddress = await signer.getAddress();
-            
-            // 2. Ambil Chain ID saat ini
-            const network = await provider.getNetwork();
-            initialChainId = network.chainId;
+        contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
 
-            if (initialChainId !== REQUIRED_CHAIN_ID) {
-                // JARINGAN SALAH: Arahkan pengguna ke modal dan batalkan inisialisasi kontrak
-                contract = null;
-                updateWalletUI(); 
+        // ✅ Ambil saldo langsung dari blockchain
+        const balanceWei = await provider.getBalance(userAddress);
+        userBalance = ethers.utils.formatEther(balanceWei);
 
-                showModal("Kesalahan Jaringan", 
-                    `Silakan pindah ke jaringan **${REQUIRED_NETWORK_NAME}** (Chain ID: ${REQUIRED_CHAIN_ID}).`,
-                    true // isNetworkError = true
-                );
-                return;
-            }
+        // ✅ Ambil fee dari kontrak langsung
+        startFeeWei = await contract.startFeeWei();
+
+        updateWalletUI();
+
+        window.ethereum.on("accountsChanged", () => location.reload());
+        window.ethereum.on("chainChanged", () => location.reload());
+
+    } catch (err) {
+        console.error("Wallet Error:", err);
+
+        provider = null;
+        signer   = null;
+        contract = null;
+        userAddress = null;
+
+        updateWalletUI();
+
+        if (err.code === 4001) {
+            showModal("Dibatalkan", "Koneksi dompet dibatalkan user.");
+        } else {
+            showModal("Gagal", err.message);
+        }
+    }
+          }
 
             // 3. JARINGAN BENAR: Lanjutkan inisialisasi
             // PENTING: Alamat kontrak yang dikoreksi (Checksum) digunakan di sini
@@ -575,7 +606,58 @@
         } catch (error) {
             console.error("Kesalahan saat koneksi dompet:", error);
             
-            // Pastikan state selalu bersih pada kegagalan
+            // Pastikan state selalu bersiasync function startGameTx() {
+    if (!contract || !signer) {
+        showModal("Error", "Wallet belum terkoneksi.");
+        return;
+    }
+
+    const username = document.getElementById('display-name-input').value.trim() || "Anon";
+
+    try {
+        // ✅ Ambil saldo LANGSUNG saat transaksi
+        const freshBalanceWei = await provider.getBalance(userAddress);
+
+        if (freshBalanceWei.lt(startFeeWei)) {
+            showModal("Saldo Kurang", "Minimal saldo 0.01 SOMI");
+            return;
+        }
+
+        const btn = document.getElementById('start-game-btn');
+        btn.innerHTML = "Menunggu konfirmasi...";
+        btn.disabled = true;
+
+        const tx = await contract.startGame(username, {
+            value: startFeeWei
+        });
+
+        showModal("TX Dikirim", `Hash: ${tx.hash}`);
+
+        const receipt = await tx.wait();
+
+        const event = receipt.events.find(e => e.event === "GameStarted");
+        gameId = event.args.gameId.toNumber();
+
+        btn.innerHTML = "MULAI LAGI";
+        btn.disabled = false;
+
+        switchView("game");
+        resetGame();
+        startGameLoop();
+
+    } catch (err) {
+        console.error("TX ERROR:", err);
+
+        document.getElementById('start-game-btn').disabled = false;
+        document.getElementById('start-game-btn').innerHTML = "MULAI BERMAIN";
+
+        if (err.code === 4001) {
+            showModal("Dibatalkan", "Transaksi dibatalkan user.");
+        } else {
+            showModal("Gagal", err.reason || err.message);
+        }
+    }
+  }h pada kegagalan
             userAddress = null;
             provider = null;
             contract = null;
@@ -591,69 +673,7 @@
     }
 
     /** Memulai sesi game melalui kontrak pintar, mengirim 0.01 SOMI */
-    async function startGameTx() {
-        if (!contract || !userAddress || startFeeWei.isZero()) {
-            showModal("Peringatan", "Dompet belum terhubung, jaringan salah, atau biaya belum dimuat.");
-            return;
-        }
-
-        const username = document.getElementById('display-name-input').value.trim() || 'AnonPlayer';
-        if (username.length > 20) {
-            showModal("Peringatan", "Nama tampilan maksimal 20 karakter.");
-            return;
-        }
-        
-        // Cek saldo
-        const currentBalanceWei = ethers.utils.parseEther(userBalance);
-        if (currentBalanceWei.lt(startFeeWei)) {
-            showModal("Saldo Kurang", `Anda membutuhkan ${ethers.utils.formatEther(startFeeWei)} SOMI (0.01 SOMI) untuk memulai game.`);
-            return;
-        }
-
-        try {
-            const startBtn = document.getElementById('start-game-btn');
-            startBtn.textContent = "Menunggu Konfirmasi Transaksi...";
-            startBtn.disabled = true;
-
-            // FIX UTAMA: Memastikan nilai (value) dikirim bersama transaksi
-            const tx = await contract.startGame(username, {
-                value: startFeeWei // Ini mengirimkan 0.01 SOMI
-            });
-
-            showModal("Transaksi Terkirim", `Transaksi memulai game telah dikirim (${tx.hash}). Harap tunggu konfirmasi...`);
-            
-            const receipt = await tx.wait();
-            
-            const gameStartedEvent = receipt.events.find(e => e.event === 'GameStarted');
-            if (gameStartedEvent) {
-                gameId = gameStartedEvent.args.gameId.toNumber();
-                
-                showModal("Game Siap!", `Transaksi berhasil dikonfirmasi. Game ID: ${gameId}. Anda bisa mulai bermain sekarang!`);
-                
-                startBtn.textContent = "MULAI SESI BARU";
-                startBtn.disabled = false;
-                
-                // Aktifkan dan pindah ke tampilan game
-                switchView('game');
-
-                // Reset dan mulai permainan Pac-Man
-                resetGame();
-                startGameLoop();
-
-            } else {
-                throw new Error("Event GameStarted tidak ditemukan.");
-            }
-
-        } catch (error) {
-            console.error("Transaksi startGame Gagal:", error);
-            const startBtn = document.getElementById('start-game-btn');
-            startBtn.textContent = "MULAI BERMAIN / SESI BARU";
-            startBtn.disabled = false;
-            
-            let errorMessage = error.code === 4001 ? "Anda membatalkan transaksi." : (error.data?.message || error.reason || "Gagal memulai game.");
-            showModal("Transaksi Gagal", `Pesan Kesalahan: ${errorMessage}`);
-        }
-    }
+    
 
     /** Mengirim skor akhir ke kontrak pintar */
     async function submitScoreTx(finalScore) {
